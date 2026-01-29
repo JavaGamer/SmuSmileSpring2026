@@ -409,7 +409,7 @@
   }
 
   async function toggleInstrumentMode(): Promise<void> {
-    instrumentMode = instrumentMode === "brass" ? "strings" : "brass";
+    instrumentMode = instrumentMode === "brass" ? "strings" : instrumentMode === "strings" ? "piano" : "brass";
     audioComponent1?.setMode(instrumentMode);
     audioComponent2?.setMode(instrumentMode);
     // Immediately swap samples so the mode switch is audible even if already playing
@@ -989,7 +989,7 @@
       {/if}
 
       <button onclick={toggleInstrumentMode} disabled={isLoading}>
-        Mode: {instrumentMode === "brass" ? "Brass (Trombone)" : "Strings (Cello/Viola)"}
+        Mode: {instrumentMode === "brass" ? "Brass (Trombone)" : instrumentMode === "strings" ? "Strings (Cello/Viola)" : "Bitcrushed Piano"}
       </button>
 
       <button onclick={togglePitchMode} disabled={isLoading}>
