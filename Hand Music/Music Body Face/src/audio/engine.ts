@@ -83,9 +83,9 @@ function dlog(engine: AudioEngine, message: string, extra?: Record<string, unkno
 type PlayState = "idle" | "attack" | "sustain" | "release";
 
 export type ArticulationLayer = "soft" | "medium" | "hard";
-export type InstrumentMode = "brass" | "strings";
+export type InstrumentMode = "brass" | "strings" | "piano";
 export type PitchMode = "low" | "mid" | "high" | "all";
-type SampleGroup = "brass:trombone" | "strings:cello" | "strings:viola";
+type SampleGroup = "brass:trombone" | "strings:cello" | "strings:viola" | "plucked:guitar";
 
 export interface AudioEngine {
   buffer: AudioBuffer | null;
@@ -99,6 +99,7 @@ export interface AudioEngine {
   bypassGain: GainNode | null; // Bypass path gain (for crossfade)
   pitchShiftActive: boolean; // Track whether pitch shift is currently engaged
   filter: Tone.Filter | null; // Lowpass filter for wah effect
+  bitCrusher: Tone.BitCrusher | null; // Bitcrusher for piano mode
   delay: Tone.FeedbackDelay | null; // Feedback delay for echo effect
   reverb: Tone.JCReverb | null;
   gain: Tone.Gain | null; // dry gain (note amplitude)
@@ -116,7 +117,7 @@ export interface AudioEngine {
   activeSource: 1 | 2; // Which source is currently active
   lastHandY: number; // Last hand Y position for pitch-based sample selection
   currentLayer: ArticulationLayer; // soft, medium, or hard based on movement jerkiness
-  instrumentMode: InstrumentMode; // brass (trombone) or strings (cello/viola)
+  instrumentMode: InstrumentMode; // brass (trombone), strings (cello/viola), or piano (bitcrushed guitar)
   currentGroup: SampleGroup; // which sample group the currently loaded buffer came from
   pitchMode: PitchMode; // low/mid/high pitch mapping bands
   lastReverbDecay: number; // seconds
@@ -148,6 +149,8 @@ const BRASS_FOLDERS = [
 ];
 
 const STRINGS_FOLDERS = ["Cello Soft", "Viola Soft"] as const;
+
+const PIANO_FOLDERS = ["Guitar"] as const;
 
 // Note name to semitone offset (C = 0)
 const NOTE_TO_SEMITONE: Record<string, number> = {
@@ -281,7 +284,7 @@ async function loadSampleManifest(): Promise<void> {
     samplesByGroupAndOctave = new Map();
     sortedOctavesByGroup = new Map();
 
-    const allFolders: string[] = [...BRASS_FOLDERS, ...STRINGS_FOLDERS];
+    const allFolders: string[] = [...BRASS_FOLDERS, ...STRINGS_FOLDERS, ...PIANO_FOLDERS];
 
     for (const folder of allFolders) {
       const files = manifest[folder] ?? [];
@@ -296,6 +299,8 @@ async function loadSampleManifest(): Promise<void> {
         group = "strings:cello";
       } else if (folder === "Viola Soft") {
         group = "strings:viola";
+      } else if (folder === "Guitar") {
+        group = "plucked:guitar";
       } else {
         continue;
       }
@@ -310,8 +315,12 @@ async function loadSampleManifest(): Promise<void> {
         if (!parsed) continue;
 
         const midiNote = noteToMidi(parsed.note, parsed.octave);
+        // Guitar samples are in all-samples/plucked/guitar/
+        const samplePath = folder === "Guitar" 
+          ? `/audio/all-samples/plucked/guitar/${file}`
+          : `/audio/${folder}/${file}`;
         const sample: SampleInfo = {
-          path: `/audio/${folder}/${file}`,
+          path: samplePath,
           midiNote,
           octave: parsed.octave,
           layer,
@@ -386,6 +395,7 @@ function getSampleByPitchGroupAndLayer(
     // Fallbacks (must exist locally)
     if (group === "strings:cello") return "/audio/Cello Soft/Cello softC3.wav";
     if (group === "strings:viola") return "/audio/Viola Soft/Viola Soft C4.wav";
+    if (group === "plucked:guitar") return "/audio/all-samples/plucked/guitar/guitar_A3_very-long_piano_normal.mp3";
     return "/audio/Trombone/Standard/Medium Layer/TB Med A3.wav";
   }
 
@@ -733,8 +743,16 @@ async function preloadSamples(): Promise<void> {
     }
   }
 
+  // Piano (guitar) samples - preload all for bitcrushed piano mode
+  const guitarSamples = samplesByGroupSorted.get("plucked:guitar") ?? [];
+  for (const sample of guitarSamples) {
+    if (!samplesToPreload.includes(sample.path)) {
+      samplesToPreload.push(sample.path);
+    }
+  }
+
   // Log sample counts for debugging
-  console.log(`[PRELOAD] Sample counts - brass: ${brassSamples.length}, cello: ${celloSamples.length}, viola: ${violaSamples.length}`);
+  console.log(`[PRELOAD] Sample counts - brass: ${brassSamples.length}, cello: ${celloSamples.length}, viola: ${violaSamples.length}, guitar: ${guitarSamples.length}`);
 
   if (samplesToPreload.length === 0) {
     console.log("No samples to preload");
@@ -778,6 +796,7 @@ export function createAudioEngine(): AudioEngine {
     bypassGain: null,
     pitchShiftActive: false,
     filter: null,
+    bitCrusher: null,
     delay: null,
     reverb: null,
     gain: null,
@@ -854,9 +873,17 @@ export async function startAudio(engine: AudioEngine): Promise<void> {
     Q: FILTER_Q,
     rolloff: -24, // Steeper rolloff for more pronounced effect
   });
-  filter.connect(dryGain); // bypass delay for now
+
+  // BitCrusher for piano mode - creates lo-fi, retro sound
+  // 4 bits gives a nice crunchy digital sound while preserving musicality
+  const bitCrusher = new Tone.BitCrusher(4);
+  bitCrusher.wet.value = 0; // Start bypassed (only enabled in piano mode)
+
+  // Route: filter -> bitCrusher -> dry/reverb paths
+  filter.connect(bitCrusher);
+  bitCrusher.connect(dryGain); // bypass delay for now
   if (ENABLE_REVERB) {
-    filter.connect(reverb!);
+    bitCrusher.connect(reverb!);
   }
   
   const pitchShift = new Tone.PitchShift({
@@ -904,6 +931,7 @@ export async function startAudio(engine: AudioEngine): Promise<void> {
   engine.bypassGain = bypassGain;
   engine.pitchShiftActive = false; // Start with bypass (low latency)
   engine.filter = filter;
+  engine.bitCrusher = bitCrusher;
   engine.delay = delay;
   engine.reverb = reverb;
   engine.gain = dryGain;
@@ -928,6 +956,8 @@ async function loadNewSample(engine: AudioEngine, retryCount: number = 0): Promi
   if (engine.instrumentMode === "strings") {
     // Keep the same strings group once selected (avoid random pitch range changes)
     group = engine.currentGroup.startsWith("strings:") ? engine.currentGroup : "strings:cello";
+  } else if (engine.instrumentMode === "piano") {
+    group = "plucked:guitar";
   }
   engine.currentGroup = group;
 
@@ -1703,9 +1733,13 @@ export function setLayer(engine: AudioEngine, layer: ArticulationLayer): void {
   engine.currentLayer = layer;
 }
 
-// Update instrument mode (brass vs strings)
+// Update instrument mode (brass, strings, or piano)
 export function setInstrumentMode(engine: AudioEngine, mode: InstrumentMode): void {
   engine.instrumentMode = mode;
+  // Enable/disable bitcrusher based on mode
+  if (engine.bitCrusher) {
+    engine.bitCrusher.wet.value = mode === "piano" ? 1 : 0;
+  }
 }
 
 // Update pitch mode banding (low/mid/high)
