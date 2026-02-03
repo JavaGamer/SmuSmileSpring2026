@@ -83,7 +83,7 @@
     gainSmooth: number; // slew-limited gain to reduce audible jitter
     closedOpennessSlew: number; // extra smoothing used ONLY for closed/release detection
   }
-  
+
   function createHandState(): HandState {
     return {
       smoothedPitch: 0,
@@ -116,7 +116,7 @@
       closedOpennessSlew: 0,
     };
   }
-  
+
   // State for each hand (index by handedness: Left=0, Right=1)
   let handStates: Record<string, HandState> = {
     "Left": createHandState(),
@@ -321,7 +321,7 @@
   const OPENNESS_MIN = 0.08;
   const OPENNESS_MAX = 0.18;
   const MAX_GAIN = 1.0;
-  const MIN_PLAYING_GAIN = 0.25;
+  const MIN_PLAYING_GAIN = 0.0;
   const RELEASE_GAIN = 0.5;
   const FIST_CLOSED_THRESHOLD = 0.09;
   const HAND_OPEN_THRESHOLD = 0.12;
@@ -329,12 +329,12 @@
   const OPEN_CONFIRM_MS = 5; // Reduced from 35ms for faster attack (~13ms latency reduction)
   const OPEN_CONFIRM_MS_RELEASE = 5; // Reduced from 25ms for faster re-trigger during release
   const CLOSED_CONFIRM_MS = 5; // Reduced from 90ms (~25ms latency reduction) - increase if false closes occur
-  
+
   // Jerkiness settings
   const JERKINESS_SMOOTHING = 0.4; // Faster response
   const SOFT_THRESHOLD = 0.15;
   const HARD_THRESHOLD = 0.4;
-  
+
   // Delay settings (velocity and rotation tracking)
   const VELOCITY_SMOOTHING = 0.1; // Faster velocity response
   const MAX_VELOCITY = 2.0;
@@ -344,7 +344,7 @@
   // This prevents "terrible behavior" in fast motion / low light.
   const TRACKING_LOSS_GRACE_MS = 600;
   const TRACKING_LOSS_MAX_HOLD_MS = 3000; // safety: eventually release to avoid stuck notes
-  
+
   // Handlers
   async function handleStart(): Promise<void> {
     isLoading = true;
@@ -480,31 +480,31 @@
     const dt = state.lastTimestamp > 0 ? (timestamp - state.lastTimestamp) / 1000 : 0.033;
     state.lastTimestamp = timestamp;
     let yVelocity = 0; // normalized units/sec (positive = moving down)
-    
+
     if (state.prevHandPos && dt > 0) {
       const dx = currentPos.x - state.prevHandPos.x;
       const dy = currentPos.y - state.prevHandPos.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
       const velocity = distance / dt;
       yVelocity = dy / dt;
-      
+
       const acceleration = Math.abs(velocity - state.prevVelocity) / dt;
       const normalizedJerk = Math.min(1, acceleration / 30);
       state.smoothedJerkiness = JERKINESS_SMOOTHING * normalizedJerk + (1 - JERKINESS_SMOOTHING) * state.smoothedJerkiness;
-      
+
       const normalizedVelocity = Math.min(1, velocity / MAX_VELOCITY);
       if (normalizedVelocity > state.smoothedVelocity) {
         state.smoothedVelocity = VELOCITY_SMOOTHING * normalizedVelocity + (1 - VELOCITY_SMOOTHING) * state.smoothedVelocity;
       } else {
         state.smoothedVelocity = 0.02 * normalizedVelocity + 0.98 * state.smoothedVelocity;
       }
-      
+
       state.prevVelocity = velocity;
     } else {
       state.smoothedVelocity *= 0.98;
     }
     state.prevHandPos = currentPos;
-    
+
     // Determine layer based on jerkiness
     let layer: "soft" | "medium" | "hard";
     if (state.smoothedJerkiness < SOFT_THRESHOLD) {
@@ -515,7 +515,7 @@
       layer = "medium";
     }
     audioComp?.updateLayer(layer);
-    
+
     // Calculate palm rotation
     if (indexMcp && pinkyMcp && wrist.z !== undefined && indexMcp.z !== undefined && pinkyMcp.z !== undefined) {
       const avgKnuckleZ = (indexMcp.z + pinkyMcp.z) / 2;
@@ -524,14 +524,14 @@
       const clampedRotation = Math.max(0, Math.min(1, rawRotation));
       state.smoothedPalmRotation = ROTATION_SMOOTHING * clampedRotation + (1 - ROTATION_SMOOTHING) * state.smoothedPalmRotation;
     }
-    
+
     // Update hand Y position for pitch-based sample selection
     // Use palm center screen-space Y (0 = top, 1 = bottom) so top selects highest pitches.
     const handYForPitch = palm.y;
     // Smooth Y a bit so pitch selection doesn't jump on single noisy frames.
     state.smoothedHandYForPitch = 0.25 * handYForPitch + 0.75 * state.smoothedHandYForPitch;
     audioComp?.updateHandY(state.smoothedHandYForPitch);
-    
+
     // Vibrato from Y-velocity directly (no LFO).
     // Gate it so it ONLY engages when the hand is oscillating up/down quickly:
     // - velocity magnitude is high enough
@@ -611,7 +611,7 @@
       (opennessForControls - OPENNESS_MIN) / (OPENNESS_MAX - OPENNESS_MIN),
       1.0
     ));
-    
+
     const curvedGain = Math.pow(normalizedOpenness, 0.5);
     const isFistClosedRaw = closedOpenness < FIST_CLOSED_THRESHOLD;
     const isHandOpenRaw = opennessForControls > HAND_OPEN_THRESHOLD;
@@ -627,9 +627,9 @@
 
     const isHandOpen = state.openConfirmMs >= OPEN_CONFIRM_MS;
     const isFistClosed = state.closedConfirmMs >= CLOSED_CONFIRM_MS;
-    
+
     let gain: number;
-    
+
     if (state.isInRelease) {
       gain = RELEASE_GAIN;
       const releaseElapsed = Date.now() - state.releaseStartTime;
@@ -652,18 +652,21 @@
           state.lastAttackMs = timestamp;
         }
       }
-    } else if (state.wasPlaying) {
-      gain = MIN_PLAYING_GAIN + curvedGain * (MAX_GAIN - MIN_PLAYING_GAIN);
     } else {
+      // Continuously map openness to output gain (allow closed hand -> near silence).
+      // Use a subtle curve for expressive control: more open → louder.
       gain = curvedGain * MAX_GAIN;
     }
 
-    // Gentle gain smoothing only (prevents audible jitter without latency).
+    // Gentle gain smoothing to avoid audible jitter while keeping responsiveness.
     state.gainSmooth = 0.22 * gain + 0.78 * state.gainSmooth;
     gain = state.gainSmooth;
-    
+
     // State transitions (simple)
-    if (isHandOpen && !state.wasPlaying && !state.isInRelease) {
+    // Soft-attack: also start playing when openness begins to rise above a small threshold,
+    // so volume can be modulated immediately (Option B).
+    // Soft-attack uses normalizedOpenness (slightly less sensitive than the previous curvedGain test)
+    if ((isHandOpen || (!state.wasPlaying && normalizedOpenness > 0.04)) && (!state.wasPlaying || audioComp?.playState?.() === "idle") && !state.isInRelease) {
       const gestureTime = performance.now();
       setLatencyGestureTime(gestureTime);
       console.log(`[LATENCY] 👋 Hand OPEN detected at ${gestureTime.toFixed(1)}ms (debounce: ${state.openConfirmMs.toFixed(0)}ms)`);
@@ -785,7 +788,7 @@
     } else {
       for (const h of handsForDraw) detectedHandedness.add(h.handedness);
     }
-    
+
     // Process each detected hand independently
     for (let i = 0; i < activeHands.length; i++) {
       const hand = activeHands[i];
@@ -795,16 +798,16 @@
           : (handsForDraw[i]?.handedness ?? hand.handedness);
       const state = handStates[controllerHandedness];
       const audioComp = controllerHandedness === "Left" ? audioComponent1 : audioComponent2;
-      
+
       const params = processHand(hand, controllerHandedness, state, audioComp, timestamp);
-      
+
       if (controllerHandedness === "Left") {
         audioParams1 = params;
       } else {
         audioParams2 = params;
       }
     }
-    
+
     // Handle hands that were lost - process each hand independently
     for (const handedness of ["Left", "Right"] as const) {
       if (!detectedHandedness.has(handedness)) {
@@ -886,7 +889,7 @@
           state.isInRelease = true;
           state.releaseStartTime = Date.now();
         }
-        
+
         // Check for release timeout
         if (state.isInRelease) {
           const releaseElapsed = Date.now() - state.releaseStartTime;
@@ -894,13 +897,13 @@
             state.isInRelease = false;
           }
         }
-        
+
         // Decay values
         state.smoothedVelocity *= 0.9;
         state.smoothedPalmRotation *= 0.95;
         state.smoothedOpenness = 0;
         state.prevHandPos = null; // Reset position tracking
-        
+
         // Set gain to 0 when not in release, otherwise fixed release gain
         const gain = state.isInRelease ? RELEASE_GAIN : 0;
 
@@ -914,7 +917,7 @@
           reverbMix: rv.reverbMix,
           reverbDecay: rv.reverbDecay,
         };
-        
+
         if (handedness === "Left") {
           audioParams1 = params;
         } else {
@@ -943,7 +946,7 @@
       }
       drawLandmarks(ctx, { ...result, hands: visibleHands }, { trails: trailOverlays });
     }
-    
+
     // Build debug showing both hands' states
     const leftState = handStates["Left"];
     const rightState = handStates["Right"];
@@ -951,7 +954,7 @@
     const rightEmoji = rightState.wasPlaying ? "▶️" : (rightState.isInRelease ? "⏹️" : "⏸️");
     const leftDetected = detectedHandedness.has("Left");
     const rightDetected = detectedHandedness.has("Right");
-    
+
     debugInfo = `L:${leftEmoji}${leftDetected ? leftState.smoothedOpenness.toFixed(2) : "---"} | R:${rightEmoji}${rightDetected ? rightState.smoothedOpenness.toFixed(2) : "---"}`;
   }
 </script>

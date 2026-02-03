@@ -45,14 +45,20 @@ function sourceId(node: AudioBufferSourceNode | null): string {
   return String(id);
 }
 
-function attachEndedCleanup(engine: AudioEngine, node: AudioBufferSourceNode, slot: "sourceNode" | "sourceNode2"): void {
+function attachEndedCleanup(
+  engine: AudioEngine,
+  node: AudioBufferSourceNode,
+  slot: "sourceNode" | "sourceNode2",
+): void {
   // Only set this if nothing else already owns onended (ASR sources).
   // For one-shot sources we override onended elsewhere.
   if (node.onended) return;
   node.onended = () => {
     if (DEBUG_AUDIO) dlog(engine, `source ended (src=${sourceId(node)})`);
-    if (slot === "sourceNode" && engine.sourceNode === node) engine.sourceNode = null;
-    if (slot === "sourceNode2" && engine.sourceNode2 === node) engine.sourceNode2 = null;
+    if (slot === "sourceNode" && engine.sourceNode === node)
+      engine.sourceNode = null;
+    if (slot === "sourceNode2" && engine.sourceNode2 === node)
+      engine.sourceNode2 = null;
   };
 }
 
@@ -68,15 +74,26 @@ function debugState(engine: AudioEngine): Record<string, unknown> {
     loopSchedulerId: engine.loopSchedulerId,
     src1: sourceId(engine.sourceNode),
     src2: sourceId(engine.sourceNode2),
-    g1: engine.sourceGain1 ? Number(engine.sourceGain1.gain.value.toFixed(3)) : null,
-    g2: engine.sourceGain2 ? Number(engine.sourceGain2.gain.value.toFixed(3)) : null,
+    g1: engine.sourceGain1
+      ? Number(engine.sourceGain1.gain.value.toFixed(3))
+      : null,
+    g2: engine.sourceGain2
+      ? Number(engine.sourceGain2.gain.value.toFixed(3))
+      : null,
   };
 }
 
-function dlog(engine: AudioEngine, message: string, extra?: Record<string, unknown>): void {
+function dlog(
+  engine: AudioEngine,
+  message: string,
+  extra?: Record<string, unknown>,
+): void {
   if (!DEBUG_AUDIO) return;
   // Keep it compact + searchable
-  console.log(`[audio#${engineId(engine as unknown as object)}] ${message}`, extra ?? debugState(engine));
+  console.log(
+    `[audio#${engineId(engine as unknown as object)}] ${message}`,
+    extra ?? debugState(engine),
+  );
 }
 
 // Playback states
@@ -85,7 +102,11 @@ type PlayState = "idle" | "attack" | "sustain" | "release";
 export type ArticulationLayer = "soft" | "medium" | "hard";
 export type InstrumentMode = "brass" | "strings" | "piano";
 export type PitchMode = "low" | "mid" | "high" | "all";
-type SampleGroup = "brass:trombone" | "strings:cello" | "strings:viola" | "plucked:guitar";
+type SampleGroup =
+  | "brass:trombone"
+  | "strings:cello"
+  | "strings:viola"
+  | "plucked:guitar";
 
 export interface AudioEngine {
   buffer: AudioBuffer | null;
@@ -154,9 +175,23 @@ const PIANO_FOLDERS = ["Guitar"] as const;
 
 // Note name to semitone offset (C = 0)
 const NOTE_TO_SEMITONE: Record<string, number> = {
-  'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11,
-  'Cs': 1, 'Db': 1, 'Ds': 3, 'Eb': 3, 'Fs': 6, 'Gb': 6,
-  'Gs': 8, 'Ab': 8, 'As': 10, 'Bb': 10,
+  C: 0,
+  D: 2,
+  E: 4,
+  F: 5,
+  G: 7,
+  A: 9,
+  B: 11,
+  Cs: 1,
+  Db: 1,
+  Ds: 3,
+  Eb: 3,
+  Fs: 6,
+  Gb: 6,
+  Gs: 8,
+  Ab: 8,
+  As: 10,
+  Bb: 10,
 };
 
 interface SampleInfo {
@@ -168,7 +203,10 @@ interface SampleInfo {
 }
 
 // Samples grouped by (group -> octave)
-let samplesByGroupAndOctave: Map<SampleGroup, Map<number, SampleInfo[]>> = new Map();
+let samplesByGroupAndOctave: Map<
+  SampleGroup,
+  Map<number, SampleInfo[]>
+> = new Map();
 let sortedOctavesByGroup: Map<SampleGroup, number[]> = new Map();
 // Flattened, sorted sample lists for deterministic pitch mapping
 let samplesByGroupSorted: Map<SampleGroup, SampleInfo[]> = new Map();
@@ -196,7 +234,9 @@ const sampleBufferCache: Map<string, AudioBuffer> = new Map();
  *   - "TB Hard A2.wav" -> { note: "A", octave: 2 }
  *   - "Mute TB Soft B3.wav" -> { note: "B", octave: 3 }
  */
-function parseNoteFromFilename(filename: string): { note: string; octave: number } | null {
+function parseNoteFromFilename(
+  filename: string,
+): { note: string; octave: number } | null {
   // Most of our .wav filenames contain the note+octave right before the extension.
   // Examples:
   // - "TB Med A2.wav"
@@ -208,23 +248,25 @@ function parseNoteFromFilename(filename: string): { note: string; octave: number
     const noteLetter = endMatch[1].toUpperCase();
     const accidental = (endMatch[2] ?? "").toLowerCase(); // 's' or 'b' or ''
     const octave = parseInt(endMatch[3], 10);
-    const note = accidental ? `${noteLetter}${accidental}`.replace("b", "b").replace("s", "s") : noteLetter;
+    const note = accidental
+      ? `${noteLetter}${accidental}`.replace("b", "b").replace("s", "s")
+      : noteLetter;
     return { note: note === "Cb" ? "B" : note, octave };
   }
-  
+
   // Fall back to old format: _A3_, _Cs4_, _Bb2_, etc.
   const oldFormatMatch = filename.match(/_([A-G][sb]?)(\d)_/i);
   if (oldFormatMatch) {
     let note = oldFormatMatch[1];
     // Normalize: 's' for sharp, 'b' for flat
     note = note.charAt(0).toUpperCase() + note.slice(1).toLowerCase();
-    if (note.length > 1 && note[1] === 's') {
-      note = note[0] + 's';
+    if (note.length > 1 && note[1] === "s") {
+      note = note[0] + "s";
     }
     const octave = parseInt(oldFormatMatch[2], 10);
     return { note, octave };
   }
-  
+
   return null;
 }
 
@@ -265,7 +307,9 @@ async function loadSampleManifest(): Promise<void> {
       manifest = extendedManifest.files;
       loopPointsData = extendedManifest.loopPoints;
       if (DEBUG_LATENCY) {
-        console.log(`[LATENCY] Loaded manifest with ${Object.keys(loopPointsData || {}).length} pre-computed loop points`);
+        console.log(
+          `[LATENCY] Loaded manifest with ${Object.keys(loopPointsData || {}).length} pre-computed loop points`,
+        );
       }
     } catch {
       // Fall back to original manifest
@@ -280,11 +324,15 @@ async function loadSampleManifest(): Promise<void> {
         precomputedLoopPoints.set(path, points);
       }
     }
-    
+
     samplesByGroupAndOctave = new Map();
     sortedOctavesByGroup = new Map();
 
-    const allFolders: string[] = [...BRASS_FOLDERS, ...STRINGS_FOLDERS, ...PIANO_FOLDERS];
+    const allFolders: string[] = [
+      ...BRASS_FOLDERS,
+      ...STRINGS_FOLDERS,
+      ...PIANO_FOLDERS,
+    ];
 
     for (const folder of allFolders) {
       const files = manifest[folder] ?? [];
@@ -316,9 +364,10 @@ async function loadSampleManifest(): Promise<void> {
 
         const midiNote = noteToMidi(parsed.note, parsed.octave);
         // Guitar samples are in all-samples/plucked/guitar/
-        const samplePath = folder === "Guitar" 
-          ? `/audio/all-samples/plucked/guitar/${file}`
-          : `/audio/${folder}/${file}`;
+        const samplePath =
+          folder === "Guitar"
+            ? `/audio/all-samples/plucked/guitar/${file}`
+            : `/audio/${folder}/${file}`;
         const sample: SampleInfo = {
           path: samplePath,
           midiNote,
@@ -355,11 +404,14 @@ async function loadSampleManifest(): Promise<void> {
           const layered = flat.filter((s) => s.layer === layer);
           const key = `${group}:${layer}`;
           // If a layer is missing (shouldn't happen), fall back to all samples.
-          brassSamplesByGroupAndLayerSorted.set(key, layered.length > 0 ? layered : flat);
+          brassSamplesByGroupAndLayerSorted.set(
+            key,
+            layered.length > 0 ? layered : flat,
+          );
         }
       }
     }
-    
+
     samplesLoaded = true;
   } catch (err) {
     console.error("Failed to load sample manifest:", err);
@@ -375,7 +427,7 @@ function getSampleByPitchGroupAndLayer(
   handY: number,
   group: SampleGroup,
   layer: ArticulationLayer,
-  pitchMode: PitchMode
+  pitchMode: PitchMode,
 ): string {
   const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
   const pitchPosition = 1 - clamp01(handY); // 0 = lowest, 1 = highest
@@ -386,34 +438,40 @@ function getSampleByPitchGroupAndLayer(
   // Some layers have fewer recorded pitches; using layer-only min/max can make
   // the middle of the screen map to unexpectedly low (or high) notes.
   const fullList = samplesByGroupSorted.get(group) ?? [];
-  const layerList =
-    group.startsWith("brass:")
-      ? (brassSamplesByGroupAndLayerSorted.get(`${group}:${layer}`) ?? [])
-      : fullList;
+  const layerList = group.startsWith("brass:")
+    ? (brassSamplesByGroupAndLayerSorted.get(`${group}:${layer}`) ?? [])
+    : fullList;
 
   if (fullList.length === 0) {
     // Fallbacks (must exist locally)
     if (group === "strings:cello") return "/audio/Cello Soft/Cello softC3.wav";
     if (group === "strings:viola") return "/audio/Viola Soft/Viola Soft C4.wav";
-    if (group === "plucked:guitar") return "/audio/all-samples/plucked/guitar/guitar_A3_very-long_piano_normal.mp3";
+    if (group === "plucked:guitar")
+      return "/audio/all-samples/plucked/guitar/guitar_A3_very-long_piano_normal.mp3";
     return "/audio/Trombone/Standard/Medium Layer/TB Med A3.wav";
   }
 
   // Apply pitch mode filtering so each mode uses the full hand Y range.
   // - Brass (trombone): prefer octave-based split if we have 3+ distinct octaves.
   // - Strings: split into 3 even groups of unique pitches (MIDI notes).
-  const applyPitchMode = (list: SampleInfo[], mode: PitchMode): SampleInfo[] => {
+  const applyPitchMode = (
+    list: SampleInfo[],
+    mode: PitchMode,
+  ): SampleInfo[] => {
     if (list.length === 0) return list;
     if (mode === "all") return list;
 
     // Brass: octave mapping (low=lowest octave, mid=median octave, high=highest octave)
     if (group.startsWith("brass:")) {
-      const octaves = Array.from(new Set(list.map((s) => s.octave))).sort((a, b) => a - b);
+      const octaves = Array.from(new Set(list.map((s) => s.octave))).sort(
+        (a, b) => a - b,
+      );
       if (octaves.length >= 3) {
         const lowOct = octaves[0];
         const highOct = octaves[octaves.length - 1];
         const midOct = octaves[Math.floor(octaves.length / 2)];
-        const targetOct = mode === "low" ? lowOct : mode === "high" ? highOct : midOct;
+        const targetOct =
+          mode === "low" ? lowOct : mode === "high" ? highOct : midOct;
         const filtered = list.filter((s) => s.octave === targetOct);
         return filtered.length > 0 ? filtered : list;
       }
@@ -421,7 +479,9 @@ function getSampleByPitchGroupAndLayer(
     }
 
     // Generic: split unique pitches into 3 even bands
-    const uniqueMidi = Array.from(new Set(list.map((s) => s.midiNote))).sort((a, b) => a - b);
+    const uniqueMidi = Array.from(new Set(list.map((s) => s.midiNote))).sort(
+      (a, b) => a - b,
+    );
     if (uniqueMidi.length <= 2) return list;
 
     const base = Math.floor(uniqueMidi.length / 3);
@@ -436,9 +496,7 @@ function getSampleByPitchGroupAndLayer(
     const highSet = new Set(uniqueMidi.slice(midEnd));
 
     const allowed =
-      mode === "low" ? lowSet :
-      mode === "high" ? highSet :
-      midSet;
+      mode === "low" ? lowSet : mode === "high" ? highSet : midSet;
 
     const filtered = list.filter((s) => allowed.has(s.midiNote));
     return filtered.length > 0 ? filtered : list;
@@ -447,7 +505,7 @@ function getSampleByPitchGroupAndLayer(
   // Apply pitch mode to the full list so mapping stays consistent across layers.
   const pitchSpace = applyPitchMode(fullList, pitchMode);
   if (pitchSpace.length === 0) return fullList[0].path;
-  
+
   const minMidi = pitchSpace[0].midiNote;
   const maxMidi = pitchSpace[pitchSpace.length - 1].midiNote;
   const targetMidi = Math.round(minMidi + pitchPosition * (maxMidi - minMidi));
@@ -475,16 +533,20 @@ function getSampleByPitchGroupAndLayer(
   const rightDist = Math.abs(rightMidi - targetMidi);
 
   const chosenMidi =
-    leftDist < rightDist ? leftMidi :
-    rightDist < leftDist ? rightMidi :
-    // Tie: choose the higher note (stable + monotonic)
-    rightMidi;
+    leftDist < rightDist
+      ? leftMidi
+      : rightDist < leftDist
+        ? rightMidi
+        : // Tie: choose the higher note (stable + monotonic)
+          rightMidi;
 
-  const byMidi = (list: SampleInfo[], midi: number): SampleInfo[] => list.filter((s) => s.midiNote === midi);
+  const byMidi = (list: SampleInfo[], midi: number): SampleInfo[] =>
+    list.filter((s) => s.midiNote === midi);
 
   // Prefer requested layer if it has this pitch; otherwise fall back to any layer.
   const layerMatches = byMidi(layerList, chosenMidi);
-  const anyMatches = layerMatches.length > 0 ? layerMatches : byMidi(pitchSpace, chosenMidi);
+  const anyMatches =
+    layerMatches.length > 0 ? layerMatches : byMidi(pitchSpace, chosenMidi);
   const pool = anyMatches.length > 0 ? anyMatches : pitchSpace;
 
   pool.sort((a, b) => a.path.localeCompare(b.path));
@@ -492,8 +554,8 @@ function getSampleByPitchGroupAndLayer(
 }
 
 // Loop point percentages (of total duration) - tighter loop region
-const LOOP_START_PERCENT = 0.30; // Start looping at 30% into sample
-const LOOP_END_PERCENT = 0.70; // Loop back before 70% of sample
+const LOOP_START_PERCENT = 0.3; // Start looping at 30% into sample
+const LOOP_END_PERCENT = 0.7; // Loop back before 70% of sample
 
 // Crossfade duration in seconds
 const CROSSFADE_DURATION = 0.15;
@@ -535,18 +597,22 @@ const MAX_SAMPLE_RETRIES = 5; // How many samples to try before giving up
  * Calculate RMS (root mean square) amplitude over a window centered at a sample index.
  * RMS gives a better measure of perceived loudness than instantaneous amplitude.
  */
-function calculateRMS(channelData: Float32Array, centerSample: number, windowSamples: number): number {
+function calculateRMS(
+  channelData: Float32Array,
+  centerSample: number,
+  windowSamples: number,
+): number {
   const halfWindow = Math.floor(windowSamples / 2);
   const start = Math.max(0, centerSample - halfWindow);
   const end = Math.min(channelData.length - 1, centerSample + halfWindow);
-  
+
   let sumSquares = 0;
   let count = 0;
   for (let i = start; i <= end; i++) {
     sumSquares += channelData[i] * channelData[i];
     count++;
   }
-  
+
   return Math.sqrt(sumSquares / count);
 }
 
@@ -566,27 +632,39 @@ interface LoopPointResult {
 function findOptimalLoopPoints(
   buffer: AudioBuffer,
   targetStart: number,
-  targetEnd: number
+  targetEnd: number,
 ): LoopPointResult {
   const t0 = performance.now();
   const sampleRate = buffer.sampleRate;
   const channelData = buffer.getChannelData(0); // Use first channel
-  
+
   // Convert times to sample indices
   const targetStartSample = Math.floor(targetStart * sampleRate);
   const targetEndSample = Math.floor(targetEnd * sampleRate);
   const searchWindowSamples = Math.floor(LOOP_SEARCH_WINDOW * sampleRate);
   const rmsWindowSamples = Math.floor(RMS_WINDOW * sampleRate);
-  
+
   // Search ranges
-  const startMin = Math.max(rmsWindowSamples, targetStartSample - searchWindowSamples);
-  const startMax = Math.min(channelData.length - rmsWindowSamples - 1, targetStartSample + searchWindowSamples);
-  const endMin = Math.max(rmsWindowSamples, targetEndSample - searchWindowSamples);
-  const endMax = Math.min(channelData.length - rmsWindowSamples - 1, targetEndSample + searchWindowSamples);
-  
+  const startMin = Math.max(
+    rmsWindowSamples,
+    targetStartSample - searchWindowSamples,
+  );
+  const startMax = Math.min(
+    channelData.length - rmsWindowSamples - 1,
+    targetStartSample + searchWindowSamples,
+  );
+  const endMin = Math.max(
+    rmsWindowSamples,
+    targetEndSample - searchWindowSamples,
+  );
+  const endMax = Math.min(
+    channelData.length - rmsWindowSamples - 1,
+    targetEndSample + searchWindowSamples,
+  );
+
   // Pre-calculate RMS values for candidate points in both regions
   const step = Math.floor(sampleRate * 0.002); // Check every 2ms
-  
+
   const startCandidates: { sample: number; rms: number }[] = [];
   for (let s = startMin; s <= startMax; s += step) {
     startCandidates.push({
@@ -594,7 +672,7 @@ function findOptimalLoopPoints(
       rms: calculateRMS(channelData, s, rmsWindowSamples),
     });
   }
-  
+
   const endCandidates: { sample: number; rms: number }[] = [];
   for (let e = endMin; e <= endMax; e += step) {
     endCandidates.push({
@@ -602,7 +680,7 @@ function findOptimalLoopPoints(
       rms: calculateRMS(channelData, e, rmsWindowSamples),
     });
   }
-  
+
   // Find the pair with the most similar RMS values
   let bestMatch = {
     startSample: targetStartSample,
@@ -611,7 +689,7 @@ function findOptimalLoopPoints(
     startRMS: 0,
     endRMS: 0,
   };
-  
+
   for (const startCandidate of startCandidates) {
     for (const endCandidate of endCandidates) {
       const rmsDiff = Math.abs(startCandidate.rms - endCandidate.rms);
@@ -626,34 +704,39 @@ function findOptimalLoopPoints(
       }
     }
   }
-  
+
   const loopStart = bestMatch.startSample / sampleRate;
   const loopEnd = bestMatch.endSample / sampleRate;
   const loopLength = loopEnd - loopStart;
-  
+
   // Normalize RMS diff relative to the average RMS level
   const avgRMS = (bestMatch.startRMS + bestMatch.endRMS) / 2;
-  const normalizedRmsDiff = avgRMS > 0 ? bestMatch.rmsDiff / avgRMS : bestMatch.rmsDiff;
-  
+  const normalizedRmsDiff =
+    avgRMS > 0 ? bestMatch.rmsDiff / avgRMS : bestMatch.rmsDiff;
+
   // Check quality thresholds
-  const isAcceptable = 
+  const isAcceptable =
     normalizedRmsDiff <= MAX_RMS_DIFF &&
     loopLength >= MIN_LOOP_LENGTH &&
     loopLength <= MAX_LOOP_LENGTH;
-  
-  const startOffset = (bestMatch.startSample - targetStartSample) / sampleRate * 1000;
-  const endOffset = (bestMatch.endSample - targetEndSample) / sampleRate * 1000;
-  
-  const status = isAcceptable ? '✓' : '✗';
+
+  const startOffset =
+    ((bestMatch.startSample - targetStartSample) / sampleRate) * 1000;
+  const endOffset =
+    ((bestMatch.endSample - targetEndSample) / sampleRate) * 1000;
+
+  const status = isAcceptable ? "✓" : "✗";
   console.log(
     `${status} Loop points: ` +
-    `start ${startOffset >= 0 ? '+' : ''}${startOffset.toFixed(1)}ms (RMS: ${bestMatch.startRMS.toFixed(4)}), ` +
-    `end ${endOffset >= 0 ? '+' : ''}${endOffset.toFixed(1)}ms (RMS: ${bestMatch.endRMS.toFixed(4)}), ` +
-    `diff: ${(normalizedRmsDiff * 100).toFixed(1)}%, length: ${loopLength.toFixed(2)}s`
+      `start ${startOffset >= 0 ? "+" : ""}${startOffset.toFixed(1)}ms (RMS: ${bestMatch.startRMS.toFixed(4)}), ` +
+      `end ${endOffset >= 0 ? "+" : ""}${endOffset.toFixed(1)}ms (RMS: ${bestMatch.endRMS.toFixed(4)}), ` +
+      `diff: ${(normalizedRmsDiff * 100).toFixed(1)}%, length: ${loopLength.toFixed(2)}s`,
   );
 
   if (DEBUG_LATENCY) {
-    console.log(`[LATENCY] findOptimalLoopPoints: ${(performance.now() - t0).toFixed(0)}ms`);
+    console.log(
+      `[LATENCY] findOptimalLoopPoints: ${(performance.now() - t0).toFixed(0)}ms`,
+    );
   }
 
   return {
@@ -669,22 +752,22 @@ async function getRandomSample(): Promise<string> {
   try {
     const response = await fetch("/audio/manifest.json");
     const manifest: Record<string, string[]> = await response.json();
-    
+
     const availableFolders: string[] = BRASS_FOLDERS.filter(
-      (folder: string) => (manifest[folder]?.length ?? 0) > 0
+      (folder: string) => (manifest[folder]?.length ?? 0) > 0,
     );
-    
+
     if (availableFolders.length === 0) {
       console.warn("No samples found in preferred folders, using fallback");
       return "/audio/Trombone/Standard/Medium Layer/TB Med A3.wav";
     }
-    
+
     const folderIndex = Math.floor(Math.random() * availableFolders.length);
     const folder = availableFolders[folderIndex];
     const files = manifest[folder];
     const fileIndex = Math.floor(Math.random() * files.length);
     const file = files[fileIndex];
-    
+
     const samplePath = `/audio/${folder}/${file}`;
     console.log("🎵 SELECTED SAMPLE:", samplePath);
     return samplePath;
@@ -703,8 +786,10 @@ async function loadAudioBuffer(url: string): Promise<AudioBuffer> {
   const buffer = await Tone.getContext().decodeAudioData(arrayBuffer);
   const decodeTime = performance.now() - t1;
   if (DEBUG_LATENCY) {
-    const filename = url.split('/').pop();
-    console.log(`[LATENCY] loadAudioBuffer "${filename}": fetch=${fetchTime.toFixed(0)}ms, decode=${decodeTime.toFixed(0)}ms, total=${(performance.now() - t0).toFixed(0)}ms`);
+    const filename = url.split("/").pop();
+    console.log(
+      `[LATENCY] loadAudioBuffer "${filename}": fetch=${fetchTime.toFixed(0)}ms, decode=${decodeTime.toFixed(0)}ms, total=${(performance.now() - t0).toFixed(0)}ms`,
+    );
   }
   return buffer;
 }
@@ -752,14 +837,18 @@ async function preloadSamples(): Promise<void> {
   }
 
   // Log sample counts for debugging
-  console.log(`[PRELOAD] Sample counts - brass: ${brassSamples.length}, cello: ${celloSamples.length}, viola: ${violaSamples.length}, guitar: ${guitarSamples.length}`);
+  console.log(
+    `[PRELOAD] Sample counts - brass: ${brassSamples.length}, cello: ${celloSamples.length}, viola: ${violaSamples.length}, guitar: ${guitarSamples.length}`,
+  );
 
   if (samplesToPreload.length === 0) {
     console.log("No samples to preload");
     return;
   }
 
-  console.log(`[PRELOAD] Aggressively preloading ${samplesToPreload.length} samples...`);
+  console.log(
+    `[PRELOAD] Aggressively preloading ${samplesToPreload.length} samples...`,
+  );
 
   // Load samples in parallel with concurrency limit to avoid overwhelming the browser
   const CONCURRENCY = 6;
@@ -772,15 +861,17 @@ async function preloadSamples(): Promise<void> {
         if (sampleBufferCache.has(path)) return; // Already cached
         const buffer = await loadAudioBuffer(path);
         sampleBufferCache.set(path, buffer);
-      })
+      }),
     );
-    loaded += results.filter(r => r.status === "fulfilled").length;
+    loaded += results.filter((r) => r.status === "fulfilled").length;
   }
 
   const elapsed = performance.now() - t0;
 
   if (DEBUG_LATENCY) {
-    console.log(`[LATENCY] preloadSamples: ${loaded}/${samplesToPreload.length} loaded in ${elapsed.toFixed(0)}ms (aggressive mode)`);
+    console.log(
+      `[LATENCY] preloadSamples: ${loaded}/${samplesToPreload.length} loaded in ${elapsed.toFixed(0)}ms (aggressive mode)`,
+    );
   }
 }
 
@@ -857,7 +948,7 @@ export async function startAudio(engine: AudioEngine): Promise<void> {
         wet: 1, // fully wet; mix handled by wetGain
       }).connect(wetGain!)
     : null;
-  
+
   // Feedback delay for echo effect (DISABLED for now)
   const delay = new Tone.FeedbackDelay({
     delayTime: DELAY_MIN_TIME, // Start with minimal delay
@@ -865,7 +956,7 @@ export async function startAudio(engine: AudioEngine): Promise<void> {
     wet: 0, // DISABLED - set to 0 to bypass delay
     maxDelay: DELAY_MAX_TIME + 0.5, // Buffer for max delay
   }).connect(dryGain);
-  
+
   // Lowpass filter for wah effect - feed both dry + reverb
   const filter = new Tone.Filter({
     type: "lowpass",
@@ -885,7 +976,7 @@ export async function startAudio(engine: AudioEngine): Promise<void> {
   if (ENABLE_REVERB) {
     bitCrusher.connect(reverb!);
   }
-  
+
   const pitchShift = new Tone.PitchShift({
     pitch: 0,
     // Reduced window size for lower latency (~45ms reduction).
@@ -949,20 +1040,32 @@ export async function startAudio(engine: AudioEngine): Promise<void> {
   await loadNewSample(engine);
 }
 
-async function loadNewSample(engine: AudioEngine, retryCount: number = 0): Promise<void> {
+async function loadNewSample(
+  engine: AudioEngine,
+  retryCount: number = 0,
+): Promise<void> {
   const t0 = performance.now();
   // Choose which family of samples to use
   let group: SampleGroup = "brass:trombone";
   if (engine.instrumentMode === "strings") {
     // Keep the same strings group once selected (avoid random pitch range changes)
-    group = engine.currentGroup.startsWith("strings:") ? engine.currentGroup : "strings:cello";
+    group = engine.currentGroup.startsWith("strings:")
+      ? engine.currentGroup
+      : "strings:cello";
   } else if (engine.instrumentMode === "piano") {
     group = "plucked:guitar";
   }
   engine.currentGroup = group;
 
-  const samplePath = getSampleByPitchGroupAndLayer(engine.lastHandY, group, engine.currentLayer, engine.pitchMode);
-  console.log(`[SAMPLE] Selection: handY=${engine.lastHandY.toFixed(2)}, layer=${engine.currentLayer}, path=${samplePath.split('/').pop()}`);
+  const samplePath = getSampleByPitchGroupAndLayer(
+    engine.lastHandY,
+    group,
+    engine.currentLayer,
+    engine.pitchMode,
+  );
+  console.log(
+    `[SAMPLE] Selection: handY=${engine.lastHandY.toFixed(2)}, layer=${engine.currentLayer}, path=${samplePath.split("/").pop()}`,
+  );
   // If we're already on the desired sample (and have a buffer), don't reload.
   if (engine.currentSample === samplePath && engine.buffer && engine.isLoaded) {
     console.log(`[SAMPLE] Already loaded, skipping`);
@@ -977,7 +1080,9 @@ async function loadNewSample(engine: AudioEngine, retryCount: number = 0): Promi
     if (buffer) {
       fromCache = true;
       if (DEBUG_LATENCY) {
-        console.log(`[LATENCY] Buffer cache HIT for "${samplePath.split('/').pop()}"`);
+        console.log(
+          `[LATENCY] Buffer cache HIT for "${samplePath.split("/").pop()}"`,
+        );
       }
     } else {
       buffer = await loadAudioBuffer(samplePath);
@@ -997,14 +1102,24 @@ async function loadNewSample(engine: AudioEngine, retryCount: number = 0): Promi
 
       if (DEBUG_LATENCY) {
         const elapsed = performance.now() - t0;
-        console.log(`[LATENCY] loadNewSample (precomputed): ${elapsed.toFixed(0)}ms${fromCache ? ' (cached)' : ''}`);
+        console.log(
+          `[LATENCY] loadNewSample (precomputed): ${elapsed.toFixed(0)}ms${fromCache ? " (cached)" : ""}`,
+        );
       }
-      console.log(`✓ Sample loaded: ${duration.toFixed(2)}s (${precomputed.useASR ? 'ASR' : 'one-shot'}), loop: ${engine.loopStart.toFixed(3)}s - ${engine.loopEnd.toFixed(3)}s [precomputed]`);
+      console.log(
+        `✓ Sample loaded: ${duration.toFixed(2)}s (${precomputed.useASR ? "ASR" : "one-shot"}), loop: ${engine.loopStart.toFixed(3)}s - ${engine.loopEnd.toFixed(3)}s [precomputed]`,
+      );
       return;
     }
 
     // Fall back to runtime loop point calculation
     const useASR = duration >= ASR_MIN_DURATION;
+    // Debug logging specifically for piano mode to aid investigation of continuous playback.
+    if (engine.instrumentMode === "piano") {
+      console.log(
+        `[PIANO] Loaded sample: ${samplePath.split("/").pop()} duration=${duration.toFixed(2)}s useASR=${useASR}`,
+      );
+    }
 
     if (useASR) {
       // Calculate optimal loop points for ASR
@@ -1014,20 +1129,26 @@ async function loadNewSample(engine: AudioEngine, retryCount: number = 0): Promi
 
       // Check if this sample meets quality thresholds
       if (!optimal.isAcceptable && retryCount < MAX_SAMPLE_RETRIES) {
-        console.log(`Sample rejected (attempt ${retryCount + 1}/${MAX_SAMPLE_RETRIES}), trying another...`);
+        console.log(
+          `Sample rejected (attempt ${retryCount + 1}/${MAX_SAMPLE_RETRIES}), trying another...`,
+        );
         await loadNewSample(engine, retryCount + 1);
         return;
       }
 
       if (!optimal.isAcceptable) {
-        console.warn(`Using sample despite poor loop quality (exhausted ${MAX_SAMPLE_RETRIES} retries)`);
+        console.warn(
+          `Using sample despite poor loop quality (exhausted ${MAX_SAMPLE_RETRIES} retries)`,
+        );
       }
 
       engine.buffer = buffer;
       engine.useASR = true;
       engine.loopStart = optimal.loopStart;
       engine.loopEnd = optimal.loopEnd;
-      console.log(`✓ Sample accepted: ${duration.toFixed(2)}s (ASR mode), loop: ${engine.loopStart.toFixed(3)}s - ${engine.loopEnd.toFixed(3)}s [computed]`);
+      console.log(
+        `✓ Sample accepted: ${duration.toFixed(2)}s (ASR mode), loop: ${engine.loopStart.toFixed(3)}s - ${engine.loopEnd.toFixed(3)}s [computed]`,
+      );
     } else {
       // Short sample: no loop, always acceptable
       engine.buffer = buffer;
@@ -1039,7 +1160,9 @@ async function loadNewSample(engine: AudioEngine, retryCount: number = 0): Promi
 
     if (DEBUG_LATENCY) {
       const elapsed = performance.now() - t0;
-      console.log(`[LATENCY] loadNewSample (computed): ${elapsed.toFixed(0)}ms`);
+      console.log(
+        `[LATENCY] loadNewSample (computed): ${elapsed.toFixed(0)}ms`,
+      );
     }
 
     engine.isLoaded = true;
@@ -1054,7 +1177,10 @@ async function loadNewSample(engine: AudioEngine, retryCount: number = 0): Promi
   }
 }
 
-async function loadSpecificSample(engine: AudioEngine, samplePath: string): Promise<void> {
+async function loadSpecificSample(
+  engine: AudioEngine,
+  samplePath: string,
+): Promise<void> {
   engine.currentSample = samplePath;
   const buffer = await loadAudioBuffer(samplePath);
   const duration = buffer.duration;
@@ -1118,38 +1244,68 @@ function stopCurrentSound(engine: AudioEngine, fade: boolean = true): void {
     clearTimeout(engine.loopSchedulerId);
     engine.loopSchedulerId = null;
   }
-  
+
   const ctx = Tone.getContext().rawContext;
   const now = ctx.currentTime;
-  
+
   if (fade && (engine.sourceGain1 || engine.sourceGain2)) {
     // Fade out both gains to prevent clicks
     if (engine.sourceGain1) {
-      engine.sourceGain1.gain.setValueAtTime(engine.sourceGain1.gain.value, now);
-      engine.sourceGain1.gain.linearRampToValueAtTime(0, now + FADE_OUT_DURATION);
+      engine.sourceGain1.gain.setValueAtTime(
+        engine.sourceGain1.gain.value,
+        now,
+      );
+      engine.sourceGain1.gain.linearRampToValueAtTime(
+        0,
+        now + FADE_OUT_DURATION,
+      );
     }
     if (engine.sourceGain2) {
-      engine.sourceGain2.gain.setValueAtTime(engine.sourceGain2.gain.value, now);
-      engine.sourceGain2.gain.linearRampToValueAtTime(0, now + FADE_OUT_DURATION);
+      engine.sourceGain2.gain.setValueAtTime(
+        engine.sourceGain2.gain.value,
+        now,
+      );
+      engine.sourceGain2.gain.linearRampToValueAtTime(
+        0,
+        now + FADE_OUT_DURATION,
+      );
     }
-    
+
     // Stop sources after fade completes
-    setTimeout(() => {
-      stopSourceNodes(engine);
-    }, FADE_OUT_DURATION * 1000 + 50);
+    setTimeout(
+      () => {
+        stopSourceNodes(engine);
+      },
+      FADE_OUT_DURATION * 1000 + 50,
+    );
   } else {
     // Stop immediately (still try to de-click quickly)
     if (engine.sourceGain1) {
-      engine.sourceGain1.gain.setValueAtTime(engine.sourceGain1.gain.value, now);
-      engine.sourceGain1.gain.linearRampToValueAtTime(0, now + DECLICK_STOP_DURATION);
+      engine.sourceGain1.gain.setValueAtTime(
+        engine.sourceGain1.gain.value,
+        now,
+      );
+      engine.sourceGain1.gain.linearRampToValueAtTime(
+        0,
+        now + DECLICK_STOP_DURATION,
+      );
     }
     if (engine.sourceGain2) {
-      engine.sourceGain2.gain.setValueAtTime(engine.sourceGain2.gain.value, now);
-      engine.sourceGain2.gain.linearRampToValueAtTime(0, now + DECLICK_STOP_DURATION);
+      engine.sourceGain2.gain.setValueAtTime(
+        engine.sourceGain2.gain.value,
+        now,
+      );
+      engine.sourceGain2.gain.linearRampToValueAtTime(
+        0,
+        now + DECLICK_STOP_DURATION,
+      );
     }
-    setTimeout(() => {
-      stopSourceNodes(engine);
-    }, DECLICK_STOP_DURATION * 1000 + 20);
+    setTimeout(
+      () => {
+        stopSourceNodes(engine);
+      },
+      DECLICK_STOP_DURATION * 1000 + 20,
+    );
   }
 }
 
@@ -1163,7 +1319,7 @@ function stopSourceNodes(engine: AudioEngine): void {
     }
     engine.sourceNode = null;
   }
-  
+
   if (engine.sourceNode2) {
     try {
       engine.sourceNode2.stop();
@@ -1173,7 +1329,7 @@ function stopSourceNodes(engine: AudioEngine): void {
     }
     engine.sourceNode2 = null;
   }
-  
+
   // Reset gains
   if (engine.sourceGain1) engine.sourceGain1.gain.value = 1;
   if (engine.sourceGain2) engine.sourceGain2.gain.value = 0;
@@ -1193,17 +1349,51 @@ function safeStopAndDisconnect(node: AudioBufferSourceNode): void {
 }
 
 // Create and start a new source node
-function createSource(engine: AudioEngine, startOffset: number, gainNode: GainNode, when: number = 0): AudioBufferSourceNode {
+function createSource(
+  engine: AudioEngine,
+  startOffset: number,
+  gainNode: GainNode,
+  when: number = 0,
+  opts?: { loop?: boolean; loopStart?: number; loopEnd?: number },
+): AudioBufferSourceNode {
   const ctx = Tone.getContext().rawContext;
   const source = ctx.createBufferSource();
   source.buffer = engine.buffer!;
+
+  // Apply loop settings (if requested) BEFORE starting the source.
+  // Some browsers may allow toggling loop while playing, but setting it
+  // up front is safer and more predictable.
+  if (opts?.loop) {
+    try {
+      source.loop = true;
+      source.loopStart =
+        typeof opts.loopStart === "number" ? opts.loopStart : 0;
+      source.loopEnd =
+        typeof opts.loopEnd === "number"
+          ? opts.loopEnd
+          : engine.buffer
+            ? engine.buffer.duration
+            : 0;
+      if (DEBUG_AUDIO)
+        dlog(
+          engine,
+          `createSource: enabling loop (start=${source.loopStart}, end=${source.loopEnd})`,
+        );
+    } catch (e) {
+      if (DEBUG_AUDIO)
+        dlog(engine, `createSource: loop configuration failed: ${e}`);
+    }
+  }
+
   source.connect(gainNode);
   source.start(when, startOffset);
   // Tag for debugging
   sourceId(source);
   if (DEBUG_LATENCY && latencyGestureTime > 0) {
     const elapsed = performance.now() - latencyGestureTime;
-    console.log(`[LATENCY] ▶ source.start() called: ${elapsed.toFixed(1)}ms after gesture (when=${when.toFixed(3)}s)`);
+    console.log(
+      `[LATENCY] ▶ source.start() called: ${elapsed.toFixed(1)}ms after gesture (when=${when.toFixed(3)}s)`,
+    );
   }
   return source;
 }
@@ -1211,13 +1401,13 @@ function createSource(engine: AudioEngine, startOffset: number, gainNode: GainNo
 // Schedule the next crossfade loop iteration
 function scheduleNextLoop(engine: AudioEngine): void {
   if (engine.playState !== "sustain" || !engine.buffer) return;
-  
+
   const loopDuration = engine.loopEnd - engine.loopStart;
   const timeUntilCrossfade = (loopDuration - CROSSFADE_DURATION) * 1000;
-  
+
   engine.loopSchedulerId = window.setTimeout(() => {
     if (engine.playState !== "sustain") return;
-    
+
     performCrossfade(engine);
   }, timeUntilCrossfade);
 }
@@ -1225,58 +1415,92 @@ function scheduleNextLoop(engine: AudioEngine): void {
 // Perform the crossfade between sources
 function performCrossfade(engine: AudioEngine): void {
   if (!engine.buffer || !engine.sourceGain1 || !engine.sourceGain2) return;
-  
+
   const ctx = Tone.getContext().rawContext;
   const now = ctx.currentTime;
-  
+
   if (engine.activeSource === 1) {
     // Fade out source 1, fade in source 2
     const old = engine.sourceNode;
     const oldId = sourceId(old);
-    engine.sourceNode2 = createSource(engine, engine.loopStart, engine.sourceGain2);
+    engine.sourceNode2 = createSource(
+      engine,
+      engine.loopStart,
+      engine.sourceGain2,
+    );
     attachEndedCleanup(engine, engine.sourceNode2, "sourceNode2");
-    dlog(engine, `crossfade 1→2 (old=${oldId}, new=${sourceId(engine.sourceNode2)})`);
-    
+    dlog(
+      engine,
+      `crossfade 1→2 (old=${oldId}, new=${sourceId(engine.sourceNode2)})`,
+    );
+
     engine.sourceGain1.gain.setValueAtTime(1, now);
-    engine.sourceGain1.gain.linearRampToValueAtTime(0, now + CROSSFADE_DURATION);
+    engine.sourceGain1.gain.linearRampToValueAtTime(
+      0,
+      now + CROSSFADE_DURATION,
+    );
     engine.sourceGain2.gain.setValueAtTime(0, now);
-    engine.sourceGain2.gain.linearRampToValueAtTime(1, now + CROSSFADE_DURATION);
-    
+    engine.sourceGain2.gain.linearRampToValueAtTime(
+      1,
+      now + CROSSFADE_DURATION,
+    );
+
     // Stop old source after crossfade
-    setTimeout(() => {
-      if (old) {
-        safeStopAndDisconnect(old);
-        if (DEBUG_AUDIO) dlog(engine, `crossfade cleanup stopped src1=${sourceId(old)}`);
-        if (engine.sourceNode === old) engine.sourceNode = null;
-      }
-    }, CROSSFADE_DURATION * 1000 + 50);
-    
+    setTimeout(
+      () => {
+        if (old) {
+          safeStopAndDisconnect(old);
+          if (DEBUG_AUDIO)
+            dlog(engine, `crossfade cleanup stopped src1=${sourceId(old)}`);
+          if (engine.sourceNode === old) engine.sourceNode = null;
+        }
+      },
+      CROSSFADE_DURATION * 1000 + 50,
+    );
+
     engine.activeSource = 2;
   } else {
     // Fade out source 2, fade in source 1
     const old = engine.sourceNode2;
     const oldId = sourceId(old);
-    engine.sourceNode = createSource(engine, engine.loopStart, engine.sourceGain1);
+    engine.sourceNode = createSource(
+      engine,
+      engine.loopStart,
+      engine.sourceGain1,
+    );
     attachEndedCleanup(engine, engine.sourceNode, "sourceNode");
-    dlog(engine, `crossfade 2→1 (old=${oldId}, new=${sourceId(engine.sourceNode)})`);
-    
+    dlog(
+      engine,
+      `crossfade 2→1 (old=${oldId}, new=${sourceId(engine.sourceNode)})`,
+    );
+
     engine.sourceGain2.gain.setValueAtTime(1, now);
-    engine.sourceGain2.gain.linearRampToValueAtTime(0, now + CROSSFADE_DURATION);
+    engine.sourceGain2.gain.linearRampToValueAtTime(
+      0,
+      now + CROSSFADE_DURATION,
+    );
     engine.sourceGain1.gain.setValueAtTime(0, now);
-    engine.sourceGain1.gain.linearRampToValueAtTime(1, now + CROSSFADE_DURATION);
-    
+    engine.sourceGain1.gain.linearRampToValueAtTime(
+      1,
+      now + CROSSFADE_DURATION,
+    );
+
     // Stop old source after crossfade
-    setTimeout(() => {
-      if (old) {
-        safeStopAndDisconnect(old);
-        if (DEBUG_AUDIO) dlog(engine, `crossfade cleanup stopped src2=${sourceId(old)}`);
-        if (engine.sourceNode2 === old) engine.sourceNode2 = null;
-      }
-    }, CROSSFADE_DURATION * 1000 + 50);
-    
+    setTimeout(
+      () => {
+        if (old) {
+          safeStopAndDisconnect(old);
+          if (DEBUG_AUDIO)
+            dlog(engine, `crossfade cleanup stopped src2=${sourceId(old)}`);
+          if (engine.sourceNode2 === old) engine.sourceNode2 = null;
+        }
+      },
+      CROSSFADE_DURATION * 1000 + 50,
+    );
+
     engine.activeSource = 1;
   }
-  
+
   // Schedule next loop
   scheduleNextLoop(engine);
 }
@@ -1285,12 +1509,20 @@ function performCrossfade(engine: AudioEngine): void {
 export function triggerAttack(engine: AudioEngine): void {
   const attackStartTime = performance.now();
   if (DEBUG_LATENCY && latencyGestureTime > 0) {
-    console.log(`[LATENCY] triggerAttack called: ${(attackStartTime - latencyGestureTime).toFixed(1)}ms after gesture`);
+    console.log(
+      `[LATENCY] triggerAttack called: ${(attackStartTime - latencyGestureTime).toFixed(1)}ms after gesture`,
+    );
   }
   if (DEBUG_AUDIO) dlog(engine, "attack() called");
-  if (!engine.isRunning || !engine.isLoaded || !engine.buffer || !engine.sourceGain1) {
+  if (
+    !engine.isRunning ||
+    !engine.isLoaded ||
+    !engine.buffer ||
+    !engine.sourceGain1
+  ) {
     dlog(engine, "Cannot trigger attack - not ready");
-    if (DEBUG_LATENCY) console.log(`[LATENCY] ⚠️ triggerAttack BLOCKED - buffer not ready`);
+    if (DEBUG_LATENCY)
+      console.log(`[LATENCY] ⚠️ triggerAttack BLOCKED - buffer not ready`);
     return;
   }
 
@@ -1299,7 +1531,10 @@ export function triggerAttack(engine: AudioEngine): void {
   // - Do NOT leave any untracked playing sources.
   // - Do NOT let releaseSource.onended load a new sample mid-note.
   if (engine.playState === "release" && engine.useASR && engine.sourceGain2) {
-    dlog(engine, "Attack requested during release; retrigger with short crossfade (v2)");
+    dlog(
+      engine,
+      "Attack requested during release; retrigger with short crossfade (v2)",
+    );
 
     // Cancel any scheduled loop (release already does this, but be safe).
     if (engine.loopSchedulerId !== null) {
@@ -1315,10 +1550,14 @@ export function triggerAttack(engine: AudioEngine): void {
     const attackLaneIndex: 1 | 2 = engine.activeSource;
     const releaseLaneIndex: 1 | 2 = engine.activeSource === 1 ? 2 : 1;
 
-    const attackGain = attackLaneIndex === 1 ? engine.sourceGain1 : engine.sourceGain2!;
-    const releaseGain = releaseLaneIndex === 1 ? engine.sourceGain1 : engine.sourceGain2!;
-    const attackSlot: "sourceNode" | "sourceNode2" = attackLaneIndex === 1 ? "sourceNode" : "sourceNode2";
-    const releaseSlot: "sourceNode" | "sourceNode2" = releaseLaneIndex === 1 ? "sourceNode" : "sourceNode2";
+    const attackGain =
+      attackLaneIndex === 1 ? engine.sourceGain1 : engine.sourceGain2!;
+    const releaseGain =
+      releaseLaneIndex === 1 ? engine.sourceGain1 : engine.sourceGain2!;
+    const attackSlot: "sourceNode" | "sourceNode2" =
+      attackLaneIndex === 1 ? "sourceNode" : "sourceNode2";
+    const releaseSlot: "sourceNode" | "sourceNode2" =
+      releaseLaneIndex === 1 ? "sourceNode" : "sourceNode2";
 
     // Capture the current release tail source (if any) so we can fade+stop it after overlap.
     const releaseSource = engine[releaseSlot];
@@ -1330,10 +1569,13 @@ export function triggerAttack(engine: AudioEngine): void {
       attackGain.gain.cancelScheduledValues(now);
       attackGain.gain.setValueAtTime(attackGain.gain.value, now);
       attackGain.gain.linearRampToValueAtTime(0, stopAt);
-      setTimeout(() => {
-        safeStopAndDisconnect(oldAttack);
-        if (engine[attackSlot] === oldAttack) engine[attackSlot] = null;
-      }, DECLICK_STOP_DURATION * 1000 + 20);
+      setTimeout(
+        () => {
+          safeStopAndDisconnect(oldAttack);
+          if (engine[attackSlot] === oldAttack) engine[attackSlot] = null;
+        },
+        DECLICK_STOP_DURATION * 1000 + 20,
+      );
     }
 
     // Cancel old gain automation and set explicit start values.
@@ -1349,16 +1591,28 @@ export function triggerAttack(engine: AudioEngine): void {
     attachEndedCleanup(engine, newSource, attackSlot);
 
     // Short overlap crossfade: release down, attack up.
-    attackGain.gain.linearRampToValueAtTime(1, stopAt + RETRIGGER_CROSSFADE_DURATION);
-    releaseGain.gain.linearRampToValueAtTime(0, stopAt + RETRIGGER_CROSSFADE_DURATION);
+    attackGain.gain.linearRampToValueAtTime(
+      1,
+      stopAt + RETRIGGER_CROSSFADE_DURATION,
+    );
+    releaseGain.gain.linearRampToValueAtTime(
+      0,
+      stopAt + RETRIGGER_CROSSFADE_DURATION,
+    );
 
     // Stop the release tail after overlap, if it exists.
     if (releaseSource) {
-      setTimeout(() => {
-        safeStopAndDisconnect(releaseSource);
-        if (engine[releaseSlot] === releaseSource) engine[releaseSlot] = null;
-        dlog(engine, `retrigger cleanup stopped release src=${sourceId(releaseSource)}`);
-      }, RETRIGGER_CROSSFADE_DURATION * 1000 + 50);
+      setTimeout(
+        () => {
+          safeStopAndDisconnect(releaseSource);
+          if (engine[releaseSlot] === releaseSource) engine[releaseSlot] = null;
+          dlog(
+            engine,
+            `retrigger cleanup stopped release src=${sourceId(releaseSource)}`,
+          );
+        },
+        RETRIGGER_CROSSFADE_DURATION * 1000 + 50,
+      );
     }
 
     // Start the normal ASR scheduling for the new note.
@@ -1381,11 +1635,12 @@ export function triggerAttack(engine: AudioEngine): void {
 
     return;
   }
-  
+
   // Check if we're actually playing (sourceNode exists and is active)
   // If playState is not idle but no source is playing, reset to idle
   if (engine.playState !== "idle") {
-    const hasActiveSource = engine.sourceNode !== null || engine.sourceNode2 !== null;
+    const hasActiveSource =
+      engine.sourceNode !== null || engine.sourceNode2 !== null;
     if (!hasActiveSource) {
       dlog(engine, "State was stuck (no active source), resetting to idle");
       engine.playState = "idle";
@@ -1396,7 +1651,10 @@ export function triggerAttack(engine: AudioEngine): void {
       const g2 = engine.sourceGain2 ? engine.sourceGain2.gain.value : 0;
       const lanesSilent = g1 < 0.001 && g2 < 0.001;
       if (lanesSilent) {
-        dlog(engine, "State looked stuck (silent lanes), forcing reset to idle");
+        dlog(
+          engine,
+          "State looked stuck (silent lanes), forcing reset to idle",
+        );
         stopCurrentSound(engine, true);
         engine.playState = "idle";
       } else {
@@ -1409,28 +1667,28 @@ export function triggerAttack(engine: AudioEngine): void {
   if (engine.useASR) {
     // Long sample: ASR mode with crossfade looping
     dlog(engine, "🎹 ATTACK (ASR) - starting sample");
-    
+
     // Reset gains
     engine.sourceGain1.gain.value = 1;
     engine.sourceGain2!.gain.value = 0;
     engine.activeSource = 1;
-    
+
     // Start from beginning
     engine.sourceNode = createSource(engine, 0, engine.sourceGain1);
     attachEndedCleanup(engine, engine.sourceNode, "sourceNode");
     engine.playState = "attack";
-    
+
     // Schedule transition to sustain when we reach loop start
     const timeToLoop = engine.loopStart * 1000;
     setTimeout(() => {
       if (engine.playState === "attack") {
         dlog(engine, "🔄 SUSTAIN - starting crossfade loop");
         engine.playState = "sustain";
-        
+
         // Schedule first crossfade
         const loopDuration = engine.loopEnd - engine.loopStart;
         const timeUntilCrossfade = (loopDuration - CROSSFADE_DURATION) * 1000;
-        
+
         engine.loopSchedulerId = window.setTimeout(() => {
           if (engine.playState === "sustain") {
             performCrossfade(engine);
@@ -1439,23 +1697,39 @@ export function triggerAttack(engine: AudioEngine): void {
       }
     }, timeToLoop);
   } else {
-    // Short sample: one-shot mode - play once, no loop
+    // Short sample: one-shot mode - play once, no loop (unless piano mode, then loop for continuous sustain)
     dlog(engine, "🎹 PLAY (one-shot) - starting sample");
-    
+
     engine.sourceGain1.gain.value = 1;
-    engine.sourceNode = createSource(engine, 0, engine.sourceGain1);
-    engine.playState = "sustain";
-    
-    // When sample ends naturally, go back to idle and load new sample
-    engine.sourceNode.onended = async () => {
-      // clear tracked source
-      if (engine.sourceNode) engine.sourceNode = null;
-      if (engine.playState !== "idle") {
-        dlog(engine, "Short sample ended naturally, loading new sample");
-        engine.playState = "idle";
-        await loadNewSample(engine);
-      }
-    };
+
+    if (engine.instrumentMode === "piano") {
+      // Loop the short piano sample for continuous sustain. Loop region prefers computed
+      // loopStart/loopEnd if available, otherwise the full buffer is used.
+      engine.sourceNode = createSource(engine, 0, engine.sourceGain1, 0, {
+        loop: true,
+        loopStart: engine.loopStart,
+        loopEnd: engine.loopEnd || (engine.buffer ? engine.buffer.duration : 0),
+      });
+      engine.playState = "sustain";
+      dlog(
+        engine,
+        `Piano: looping one-shot sample (loopStart=${engine.loopStart}, loopEnd=${engine.loopEnd || (engine.buffer ? engine.buffer.duration : 0)})`,
+      );
+      // No onended handler — the loop will be stopped by triggerRelease/stopCurrentSound.
+    } else {
+      engine.sourceNode = createSource(engine, 0, engine.sourceGain1);
+      engine.playState = "sustain";
+      // When sample ends naturally, go back to idle and load new sample
+      engine.sourceNode.onended = async () => {
+        // clear tracked source
+        if (engine.sourceNode) engine.sourceNode = null;
+        if (engine.playState !== "idle") {
+          dlog(engine, "Short sample ended naturally, loading new sample");
+          engine.playState = "idle";
+          await loadNewSample(engine);
+        }
+      };
+    }
   }
 }
 
@@ -1465,7 +1739,7 @@ export function triggerRelease(engine: AudioEngine): void {
   if (!engine.isRunning || !engine.buffer) {
     return;
   }
-  
+
   if (engine.playState === "idle" || engine.playState === "release") {
     return;
   }
@@ -1473,27 +1747,30 @@ export function triggerRelease(engine: AudioEngine): void {
   if (engine.useASR && engine.sourceGain1 && engine.sourceGain2) {
     // Long sample: ASR mode - crossfade to release portion
     dlog(engine, "🎹 RELEASE (ASR) - crossfading to ending");
-    
+
     // Cancel any scheduled crossfade
     if (engine.loopSchedulerId !== null) {
       clearTimeout(engine.loopSchedulerId);
       engine.loopSchedulerId = null;
     }
-    
+
     engine.playState = "release";
-    
+
     const ctx = Tone.getContext().rawContext;
     const now = ctx.currentTime;
-    
+
     // Create a new source starting at loopEnd (the release portion)
     const releaseSource = ctx.createBufferSource();
     releaseSource.buffer = engine.buffer;
-    
+
     // Use the inactive gain node for the release
-    const releaseGain = engine.activeSource === 1 ? engine.sourceGain2 : engine.sourceGain1;
-    const currentGain = engine.activeSource === 1 ? engine.sourceGain1 : engine.sourceGain2;
-    const oldSource = engine.activeSource === 1 ? engine.sourceNode : engine.sourceNode2;
-    
+    const releaseGain =
+      engine.activeSource === 1 ? engine.sourceGain2 : engine.sourceGain1;
+    const currentGain =
+      engine.activeSource === 1 ? engine.sourceGain1 : engine.sourceGain2;
+    const oldSource =
+      engine.activeSource === 1 ? engine.sourceNode : engine.sourceNode2;
+
     releaseSource.connect(releaseGain);
     releaseSource.start(0, engine.loopEnd); // Start from release portion
 
@@ -1506,7 +1783,7 @@ export function triggerRelease(engine: AudioEngine): void {
       engine.sourceNode = releaseSource;
       sourceId(releaseSource);
     }
-    
+
     // Crossfade: fade out current, fade in release.
     // IMPORTANT: cancel any in-flight gain automation (e.g. if user closes during a loop crossfade),
     // otherwise competing ramps can cause audible hitches.
@@ -1516,16 +1793,20 @@ export function triggerRelease(engine: AudioEngine): void {
     currentGain.gain.linearRampToValueAtTime(0, now + CROSSFADE_DURATION);
     releaseGain.gain.setValueAtTime(0, now);
     releaseGain.gain.linearRampToValueAtTime(1, now + CROSSFADE_DURATION);
-    
+
     // Stop current source after crossfade
-    setTimeout(() => {
-      if (!oldSource) return;
-      safeStopAndDisconnect(oldSource);
-      if (DEBUG_AUDIO) dlog(engine, `release cleanup stopped old=${sourceId(oldSource)}`);
-      if (engine.sourceNode === oldSource) engine.sourceNode = null;
-      if (engine.sourceNode2 === oldSource) engine.sourceNode2 = null;
-    }, CROSSFADE_DURATION * 1000 + 50);
-    
+    setTimeout(
+      () => {
+        if (!oldSource) return;
+        safeStopAndDisconnect(oldSource);
+        if (DEBUG_AUDIO)
+          dlog(engine, `release cleanup stopped old=${sourceId(oldSource)}`);
+        if (engine.sourceNode === oldSource) engine.sourceNode = null;
+        if (engine.sourceNode2 === oldSource) engine.sourceNode2 = null;
+      },
+      CROSSFADE_DURATION * 1000 + 50,
+    );
+
     // When release portion ends:
     // - Always clear the tracked slot for this release source
     // - Only load the next sample if we're still in release state
@@ -1547,7 +1828,7 @@ export function triggerRelease(engine: AudioEngine): void {
         await loadNewSample(engine);
       }
     };
-    
+
     console.log(`Release portion: ${releaseDuration.toFixed(2)}s`);
   } else {
     // Short sample: one-shot mode - fade out
@@ -1557,11 +1838,14 @@ export function triggerRelease(engine: AudioEngine): void {
     // Ensure source nodes are nulled for our state check
     engine.sourceNode = null;
     engine.sourceNode2 = null;
-    
+
     // Load new sample for next time (after fade)
-    setTimeout(() => {
-      loadNewSample(engine);
-    }, FADE_OUT_DURATION * 1000 + 50);
+    setTimeout(
+      () => {
+        loadNewSample(engine);
+      },
+      FADE_OUT_DURATION * 1000 + 50,
+    );
   }
 }
 
@@ -1570,7 +1854,10 @@ const VIBRATO_ACTIVE_THRESHOLD = 0.008;
 // Crossfade time between bypass and pitch shift paths (seconds)
 const BYPASS_CROSSFADE_TIME = 0.025;
 
-export function updateAudioParams(engine: AudioEngine, params: AudioParams): void {
+export function updateAudioParams(
+  engine: AudioEngine,
+  params: AudioParams,
+): void {
   if (!engine.isRunning || !engine.gain) return;
 
   // Pitch shift (used for velocity-driven vibrato)
@@ -1587,7 +1874,8 @@ export function updateAudioParams(engine: AudioEngine, params: AudioParams): voi
     }
 
     // PitchShift bypass logic: when vibrato is inactive, route through bypass for lower latency
-    const vibratoActive = ENABLE_VIBRATO && Math.abs(target) > VIBRATO_ACTIVE_THRESHOLD;
+    const vibratoActive =
+      ENABLE_VIBRATO && Math.abs(target) > VIBRATO_ACTIVE_THRESHOLD;
     if (engine.pitchShiftGain && engine.bypassGain) {
       const ctx = Tone.getContext().rawContext;
       const now = ctx.currentTime;
@@ -1595,20 +1883,44 @@ export function updateAudioParams(engine: AudioEngine, params: AudioParams): voi
       if (vibratoActive && !engine.pitchShiftActive) {
         // Crossfade TO pitch shift path (vibrato just became active)
         engine.pitchShiftActive = true;
-        engine.bypassGain.gain.setValueAtTime(engine.bypassGain.gain.value, now);
-        engine.bypassGain.gain.linearRampToValueAtTime(0, now + BYPASS_CROSSFADE_TIME);
-        engine.pitchShiftGain.gain.setValueAtTime(engine.pitchShiftGain.gain.value, now);
-        engine.pitchShiftGain.gain.linearRampToValueAtTime(1, now + BYPASS_CROSSFADE_TIME);
+        engine.bypassGain.gain.setValueAtTime(
+          engine.bypassGain.gain.value,
+          now,
+        );
+        engine.bypassGain.gain.linearRampToValueAtTime(
+          0,
+          now + BYPASS_CROSSFADE_TIME,
+        );
+        engine.pitchShiftGain.gain.setValueAtTime(
+          engine.pitchShiftGain.gain.value,
+          now,
+        );
+        engine.pitchShiftGain.gain.linearRampToValueAtTime(
+          1,
+          now + BYPASS_CROSSFADE_TIME,
+        );
         if (DEBUG_LATENCY) {
           console.log(`[LATENCY] PitchShift ENGAGED (vibrato active)`);
         }
       } else if (!vibratoActive && engine.pitchShiftActive) {
         // Crossfade TO bypass path (vibrato just became inactive)
         engine.pitchShiftActive = false;
-        engine.pitchShiftGain.gain.setValueAtTime(engine.pitchShiftGain.gain.value, now);
-        engine.pitchShiftGain.gain.linearRampToValueAtTime(0, now + BYPASS_CROSSFADE_TIME);
-        engine.bypassGain.gain.setValueAtTime(engine.bypassGain.gain.value, now);
-        engine.bypassGain.gain.linearRampToValueAtTime(1, now + BYPASS_CROSSFADE_TIME);
+        engine.pitchShiftGain.gain.setValueAtTime(
+          engine.pitchShiftGain.gain.value,
+          now,
+        );
+        engine.pitchShiftGain.gain.linearRampToValueAtTime(
+          0,
+          now + BYPASS_CROSSFADE_TIME,
+        );
+        engine.bypassGain.gain.setValueAtTime(
+          engine.bypassGain.gain.value,
+          now,
+        );
+        engine.bypassGain.gain.linearRampToValueAtTime(
+          1,
+          now + BYPASS_CROSSFADE_TIME,
+        );
         if (DEBUG_LATENCY) {
           console.log(`[LATENCY] PitchShift BYPASSED (lower latency)`);
         }
@@ -1618,21 +1930,25 @@ export function updateAudioParams(engine: AudioEngine, params: AudioParams): voi
 
   // Update gain - slightly slower ramp to reduce jitter/pops
   engine.gain.gain.rampTo(params.gain, 0.015);
-  
+
   // Update filter cutoff for wah effect
   if (engine.filter) {
     if (ENABLE_WAH) {
-      const cutoff = FILTER_MIN_FREQ * Math.pow(FILTER_MAX_FREQ / FILTER_MIN_FREQ, params.filterCutoff);
+      const cutoff =
+        FILTER_MIN_FREQ *
+        Math.pow(FILTER_MAX_FREQ / FILTER_MIN_FREQ, params.filterCutoff);
       engine.filter.frequency.rampTo(cutoff, 0.008); // Fast ramp
     } else {
       // Keep filter fully open so it has no audible "wah" behavior.
       engine.filter.frequency.rampTo(FILTER_MAX_FREQ, 0.02);
     }
   }
-  
+
   // Update delay parameters (delay is currently bypassed)
   if (engine.delay && engine.delay.wet.value > 0) {
-    const delayTime = DELAY_MIN_TIME + Math.pow(params.delayTime, 3) * (DELAY_MAX_TIME - DELAY_MIN_TIME);
+    const delayTime =
+      DELAY_MIN_TIME +
+      Math.pow(params.delayTime, 3) * (DELAY_MAX_TIME - DELAY_MIN_TIME);
     engine.delay.delayTime.rampTo(delayTime, 0.1);
   }
 
@@ -1659,7 +1975,7 @@ export async function swapSample(engine: AudioEngine): Promise<void> {
   if (!engine.isRunning) {
     return;
   }
-  
+
   stopCurrentSound(engine);
   engine.playState = "idle";
   await loadNewSample(engine);
@@ -1679,7 +1995,12 @@ export function setHandY(engine: AudioEngine, handY: number): void {
   if (!engine.isRunning) return;
   if (!samplesLoaded) return;
 
-  const desiredPath = getSampleByPitchGroupAndLayer(engine.lastHandY, engine.currentGroup, engine.currentLayer, engine.pitchMode);
+  const desiredPath = getSampleByPitchGroupAndLayer(
+    engine.lastHandY,
+    engine.currentGroup,
+    engine.currentLayer,
+    engine.pitchMode,
+  );
 
   // If idle, we can load directly into the engine
   const isIdle = engine.playState === "idle";
@@ -1716,7 +2037,9 @@ export function setHandY(engine: AudioEngine, handY: number): void {
         // Playing: just pre-cache the buffer so it's ready for next note
         if (!sampleBufferCache.has(scheduledTarget)) {
           if (DEBUG_LATENCY) {
-            console.log(`[LATENCY] Prefetching while playing: ${scheduledTarget.split('/').pop()}`);
+            console.log(
+              `[LATENCY] Prefetching while playing: ${scheduledTarget.split("/").pop()}`,
+            );
           }
           const buffer = await loadAudioBuffer(scheduledTarget);
           sampleBufferCache.set(scheduledTarget, buffer);
@@ -1734,7 +2057,10 @@ export function setLayer(engine: AudioEngine, layer: ArticulationLayer): void {
 }
 
 // Update instrument mode (brass, strings, or piano)
-export function setInstrumentMode(engine: AudioEngine, mode: InstrumentMode): void {
+export function setInstrumentMode(
+  engine: AudioEngine,
+  mode: InstrumentMode,
+): void {
   engine.instrumentMode = mode;
   // Enable/disable bitcrusher based on mode
   if (engine.bitCrusher) {
