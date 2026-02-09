@@ -121,6 +121,9 @@ export interface AudioEngine {
   pitchShiftActive: boolean; // Track whether pitch shift is currently engaged
   filter: Tone.Filter | null; // Lowpass filter for wah effect
   bitCrusher: Tone.BitCrusher | null; // Bitcrusher for piano mode
+  drive: Tone.Distortion | null; // Drive for piano mode
+  noise: Tone.Noise | null; // Noise source for piano mode
+  noiseGain: Tone.Gain | null; // Noise gain for piano mode
   delay: Tone.FeedbackDelay | null; // Feedback delay for echo effect
   reverb: Tone.JCReverb | null;
   gain: Tone.Gain | null; // dry gain (note amplitude)
@@ -138,7 +141,7 @@ export interface AudioEngine {
   activeSource: 1 | 2; // Which source is currently active
   lastHandY: number; // Last hand Y position for pitch-based sample selection
   currentLayer: ArticulationLayer; // soft, medium, or hard based on movement jerkiness
-  instrumentMode: InstrumentMode; // brass (trombone), strings (cello/viola), or piano (bitcrushed guitar)
+  instrumentMode: InstrumentMode; // brass (trombone), strings (cello/viola), or piano (bitcrushed viola)
   currentGroup: SampleGroup; // which sample group the currently loaded buffer came from
   pitchMode: PitchMode; // low/mid/high pitch mapping bands
   lastReverbDecay: number; // seconds
@@ -171,7 +174,7 @@ const BRASS_FOLDERS = [
 
 const STRINGS_FOLDERS = ["Cello Soft", "Viola Soft"] as const;
 
-const PIANO_FOLDERS = ["Guitar"] as const;
+const PIANO_FOLDERS = ["Viola Soft"] as const;
 
 // Note name to semitone offset (C = 0)
 const NOTE_TO_SEMITONE: Record<string, number> = {
@@ -301,10 +304,16 @@ async function loadSampleManifest(): Promise<void> {
     let manifest: Record<string, string[]>;
     let loopPointsData: Record<string, PrecomputedLoopPoints> | null = null;
 
+    // Always load base manifest first so we can merge in any missing folders
+    const baseResponse = await fetch("/audio/manifest.json");
+    const baseManifest = await baseResponse.json();
+    manifest = baseManifest;
+
     try {
       const response = await fetch("/audio/manifest-with-loops.json");
       const extendedManifest = await response.json();
-      manifest = extendedManifest.files;
+      // Merge: loop manifest may omit folders like Guitar, so overlay on base
+      manifest = { ...baseManifest, ...extendedManifest.files };
       loopPointsData = extendedManifest.loopPoints;
       if (DEBUG_LATENCY) {
         console.log(
@@ -312,9 +321,6 @@ async function loadSampleManifest(): Promise<void> {
         );
       }
     } catch {
-      // Fall back to original manifest
-      const response = await fetch("/audio/manifest.json");
-      manifest = await response.json();
       console.log("Using original manifest (no pre-computed loop points)");
     }
 
@@ -557,10 +563,18 @@ function getSampleByPitchGroupAndLayer(
 const LOOP_START_PERCENT = 0.3; // Start looping at 30% into sample
 const LOOP_END_PERCENT = 0.7; // Loop back before 70% of sample
 
+// Piano-specific loop window (avoid near-silent tail of plucked samples)
+const PIANO_LOOP_START_PERCENT = 0.05;
+const PIANO_LOOP_END_PERCENT = 0.35;
+
 // Crossfade duration in seconds
 const CROSSFADE_DURATION = 0.15;
 // When retriggering during a release tail, allow a brief overlap
 const RETRIGGER_CROSSFADE_DURATION = 0.12;
+
+// Piano-specific crossfade timing (slightly longer for smoother loops)
+const PIANO_CROSSFADE_DURATION = 0.22;
+const PIANO_RETRIGGER_CROSSFADE_DURATION = 0.16;
 
 // Fade out duration when stopping (prevents clicks)
 const FADE_OUT_DURATION = 0.1;
@@ -571,6 +585,16 @@ const DECLICK_STOP_DURATION = 0.01;
 const FILTER_MIN_FREQ = 200; // Hz - "w" sound (closed hand)
 const FILTER_MAX_FREQ = 4000; // Hz - "ah" sound (open hand)
 const FILTER_Q = 4; // Resonance - higher = more pronounced wah
+
+// Piano-specific phone-style filter range (band-limited)
+const PIANO_FILTER_MIN_FREQ = 350;
+const PIANO_FILTER_MAX_FREQ = 3000;
+const PIANO_FILTER_Q = 1.1;
+
+// Piano lo-fi character (telephone-ish)
+const PIANO_DRIVE = 0.35;
+const PIANO_DRIVE_WET = 0.7;
+const PIANO_NOISE_GAIN = 0.02;
 
 // Delay settings
 const DELAY_MIN_TIME = 0.01; // seconds - minimum delay (nearly no delay)
@@ -888,6 +912,9 @@ export function createAudioEngine(): AudioEngine {
     pitchShiftActive: false,
     filter: null,
     bitCrusher: null,
+    drive: null,
+    noise: null,
+    noiseGain: null,
     delay: null,
     reverb: null,
     gain: null,
@@ -966,15 +993,30 @@ export async function startAudio(engine: AudioEngine): Promise<void> {
   });
 
   // BitCrusher for piano mode - creates lo-fi, retro sound
-  // 4 bits gives a nice crunchy digital sound while preserving musicality
+  // 4 bits = softer crunch for a more soothing character
   const bitCrusher = new Tone.BitCrusher(4);
   bitCrusher.wet.value = 0; // Start bypassed (only enabled in piano mode)
 
-  // Route: filter -> bitCrusher -> dry/reverb paths
+  // Drive for added telephone grit
+  const drive = new Tone.Distortion({
+    distortion: PIANO_DRIVE,
+    wet: 0, // enabled in piano mode
+  });
+
+  // Subtle noise layer for authenticity (band-limited via filter)
+  const noise = new Tone.Noise("pink");
+  const noiseGain = new Tone.Gain(0);
+  noise.connect(noiseGain);
+  // @ts-ignore
+  noiseGain.connect(filter.input.input || filter.input);
+  noise.start();
+
+  // Route: filter -> bitCrusher -> drive -> dry/reverb paths
   filter.connect(bitCrusher);
-  bitCrusher.connect(dryGain); // bypass delay for now
+  bitCrusher.connect(drive);
+  drive.connect(dryGain); // bypass delay for now
   if (ENABLE_REVERB) {
-    bitCrusher.connect(reverb!);
+    drive.connect(reverb!);
   }
 
   const pitchShift = new Tone.PitchShift({
@@ -1023,6 +1065,9 @@ export async function startAudio(engine: AudioEngine): Promise<void> {
   engine.pitchShiftActive = false; // Start with bypass (low latency)
   engine.filter = filter;
   engine.bitCrusher = bitCrusher;
+  engine.drive = drive;
+  engine.noise = noise;
+  engine.noiseGain = noiseGain;
   engine.delay = delay;
   engine.reverb = reverb;
   engine.gain = dryGain;
@@ -1053,7 +1098,7 @@ async function loadNewSample(
       ? engine.currentGroup
       : "strings:cello";
   } else if (engine.instrumentMode === "piano") {
-    group = "plucked:guitar";
+    group = "strings:viola";
   }
   engine.currentGroup = group;
 
@@ -1098,6 +1143,13 @@ async function loadNewSample(
       engine.useASR = precomputed.useASR;
       engine.loopStart = precomputed.loopStart;
       engine.loopEnd = precomputed.loopEnd;
+
+      if (engine.instrumentMode === "piano") {
+        engine.useASR = true;
+        engine.loopStart = duration * PIANO_LOOP_START_PERCENT;
+        engine.loopEnd = duration * PIANO_LOOP_END_PERCENT;
+      }
+
       engine.isLoaded = true;
 
       if (DEBUG_LATENCY) {
@@ -1107,7 +1159,7 @@ async function loadNewSample(
         );
       }
       console.log(
-        `✓ Sample loaded: ${duration.toFixed(2)}s (${precomputed.useASR ? "ASR" : "one-shot"}), loop: ${engine.loopStart.toFixed(3)}s - ${engine.loopEnd.toFixed(3)}s [precomputed]`,
+        `✓ Sample loaded: ${duration.toFixed(2)}s (${engine.useASR ? "ASR" : "one-shot"}), loop: ${engine.loopStart.toFixed(3)}s - ${engine.loopEnd.toFixed(3)}s [precomputed]`,
       );
       return;
     }
@@ -1121,7 +1173,16 @@ async function loadNewSample(
       );
     }
 
-    if (useASR) {
+    if (engine.instrumentMode === "piano") {
+      // Piano: loop a mid-body region to avoid silent tail
+      engine.buffer = buffer;
+      engine.useASR = true;
+      engine.loopStart = duration * PIANO_LOOP_START_PERCENT;
+      engine.loopEnd = duration * PIANO_LOOP_END_PERCENT;
+      console.log(
+        `✓ Sample accepted: ${duration.toFixed(2)}s (piano ASR loop), loop: ${engine.loopStart.toFixed(3)}s - ${engine.loopEnd.toFixed(3)}s`,
+      );
+    } else if (useASR) {
       // Calculate optimal loop points for ASR
       const targetStart = duration * LOOP_START_PERCENT;
       const targetEnd = duration * LOOP_END_PERCENT;
@@ -1185,7 +1246,12 @@ async function loadSpecificSample(
   const buffer = await loadAudioBuffer(samplePath);
   const duration = buffer.duration;
   const useASR = duration >= ASR_MIN_DURATION;
-  if (useASR) {
+  if (engine.instrumentMode === "piano") {
+    engine.buffer = buffer;
+    engine.useASR = true;
+    engine.loopStart = duration * PIANO_LOOP_START_PERCENT;
+    engine.loopEnd = duration * PIANO_LOOP_END_PERCENT;
+  } else if (useASR) {
     const targetStart = duration * LOOP_START_PERCENT;
     const targetEnd = duration * LOOP_END_PERCENT;
     const optimal = findOptimalLoopPoints(buffer, targetStart, targetEnd);
@@ -1211,6 +1277,10 @@ export function stopAudio(engine: AudioEngine): void {
   engine.pitchShiftGain?.disconnect();
   engine.bypassGain?.disconnect();
   engine.filter?.dispose();
+  engine.bitCrusher?.dispose();
+  engine.drive?.dispose();
+  engine.noise?.dispose();
+  engine.noiseGain?.dispose();
   engine.reverb?.dispose();
   engine.gain?.dispose();
   engine.wetGain?.dispose();
@@ -1225,6 +1295,10 @@ export function stopAudio(engine: AudioEngine): void {
   engine.bypassGain = null;
   engine.pitchShiftActive = false;
   engine.filter = null;
+  engine.bitCrusher = null;
+  engine.drive = null;
+  engine.noise = null;
+  engine.noiseGain = null;
   engine.reverb = null;
   engine.gain = null;
   engine.wetGain = null;
@@ -1398,12 +1472,25 @@ function createSource(
   return source;
 }
 
+function getCrossfadeDuration(engine: AudioEngine): number {
+  return engine.instrumentMode === "piano"
+    ? PIANO_CROSSFADE_DURATION
+    : CROSSFADE_DURATION;
+}
+
+function getRetriggerCrossfadeDuration(engine: AudioEngine): number {
+  return engine.instrumentMode === "piano"
+    ? PIANO_RETRIGGER_CROSSFADE_DURATION
+    : RETRIGGER_CROSSFADE_DURATION;
+}
+
 // Schedule the next crossfade loop iteration
 function scheduleNextLoop(engine: AudioEngine): void {
   if (engine.playState !== "sustain" || !engine.buffer) return;
 
   const loopDuration = engine.loopEnd - engine.loopStart;
-  const timeUntilCrossfade = (loopDuration - CROSSFADE_DURATION) * 1000;
+  const crossfadeDuration = getCrossfadeDuration(engine);
+  const timeUntilCrossfade = (loopDuration - crossfadeDuration) * 1000;
 
   engine.loopSchedulerId = window.setTimeout(() => {
     if (engine.playState !== "sustain") return;
@@ -1418,6 +1505,7 @@ function performCrossfade(engine: AudioEngine): void {
 
   const ctx = Tone.getContext().rawContext;
   const now = ctx.currentTime;
+  const crossfadeDuration = getCrossfadeDuration(engine);
 
   if (engine.activeSource === 1) {
     // Fade out source 1, fade in source 2
@@ -1435,15 +1523,9 @@ function performCrossfade(engine: AudioEngine): void {
     );
 
     engine.sourceGain1.gain.setValueAtTime(1, now);
-    engine.sourceGain1.gain.linearRampToValueAtTime(
-      0,
-      now + CROSSFADE_DURATION,
-    );
+    engine.sourceGain1.gain.linearRampToValueAtTime(0, now + crossfadeDuration);
     engine.sourceGain2.gain.setValueAtTime(0, now);
-    engine.sourceGain2.gain.linearRampToValueAtTime(
-      1,
-      now + CROSSFADE_DURATION,
-    );
+    engine.sourceGain2.gain.linearRampToValueAtTime(1, now + crossfadeDuration);
 
     // Stop old source after crossfade
     setTimeout(
@@ -1455,7 +1537,7 @@ function performCrossfade(engine: AudioEngine): void {
           if (engine.sourceNode === old) engine.sourceNode = null;
         }
       },
-      CROSSFADE_DURATION * 1000 + 50,
+      crossfadeDuration * 1000 + 50,
     );
 
     engine.activeSource = 2;
@@ -1475,15 +1557,9 @@ function performCrossfade(engine: AudioEngine): void {
     );
 
     engine.sourceGain2.gain.setValueAtTime(1, now);
-    engine.sourceGain2.gain.linearRampToValueAtTime(
-      0,
-      now + CROSSFADE_DURATION,
-    );
+    engine.sourceGain2.gain.linearRampToValueAtTime(0, now + crossfadeDuration);
     engine.sourceGain1.gain.setValueAtTime(0, now);
-    engine.sourceGain1.gain.linearRampToValueAtTime(
-      1,
-      now + CROSSFADE_DURATION,
-    );
+    engine.sourceGain1.gain.linearRampToValueAtTime(1, now + crossfadeDuration);
 
     // Stop old source after crossfade
     setTimeout(
@@ -1495,7 +1571,7 @@ function performCrossfade(engine: AudioEngine): void {
           if (engine.sourceNode2 === old) engine.sourceNode2 = null;
         }
       },
-      CROSSFADE_DURATION * 1000 + 50,
+      crossfadeDuration * 1000 + 50,
     );
 
     engine.activeSource = 1;
@@ -1590,15 +1666,11 @@ export function triggerAttack(engine: AudioEngine): void {
     engine[attackSlot] = newSource;
     attachEndedCleanup(engine, newSource, attackSlot);
 
+    const retriggerCrossfade = getRetriggerCrossfadeDuration(engine);
+
     // Short overlap crossfade: release down, attack up.
-    attackGain.gain.linearRampToValueAtTime(
-      1,
-      stopAt + RETRIGGER_CROSSFADE_DURATION,
-    );
-    releaseGain.gain.linearRampToValueAtTime(
-      0,
-      stopAt + RETRIGGER_CROSSFADE_DURATION,
-    );
+    attackGain.gain.linearRampToValueAtTime(1, stopAt + retriggerCrossfade);
+    releaseGain.gain.linearRampToValueAtTime(0, stopAt + retriggerCrossfade);
 
     // Stop the release tail after overlap, if it exists.
     if (releaseSource) {
@@ -1611,7 +1683,7 @@ export function triggerAttack(engine: AudioEngine): void {
             `retrigger cleanup stopped release src=${sourceId(releaseSource)}`,
           );
         },
-        RETRIGGER_CROSSFADE_DURATION * 1000 + 50,
+        retriggerCrossfade * 1000 + 50,
       );
     }
 
@@ -1624,7 +1696,8 @@ export function triggerAttack(engine: AudioEngine): void {
         engine.playState = "sustain";
 
         const loopDuration = engine.loopEnd - engine.loopStart;
-        const timeUntilCrossfade = (loopDuration - CROSSFADE_DURATION) * 1000;
+        const crossfadeDuration = getCrossfadeDuration(engine);
+        const timeUntilCrossfade = (loopDuration - crossfadeDuration) * 1000;
         engine.loopSchedulerId = window.setTimeout(() => {
           if (engine.playState === "sustain") {
             performCrossfade(engine);
@@ -1664,6 +1737,12 @@ export function triggerAttack(engine: AudioEngine): void {
     }
   }
 
+  // Piano mode: use ASR crossfade looping for smoother transitions
+  if (engine.instrumentMode === "piano") {
+    dlog(engine, "🎹 ATTACK (Piano) - using ASR crossfade loop");
+    engine.useASR = true;
+  }
+
   if (engine.useASR) {
     // Long sample: ASR mode with crossfade looping
     dlog(engine, "🎹 ATTACK (ASR) - starting sample");
@@ -1687,7 +1766,8 @@ export function triggerAttack(engine: AudioEngine): void {
 
         // Schedule first crossfade
         const loopDuration = engine.loopEnd - engine.loopStart;
-        const timeUntilCrossfade = (loopDuration - CROSSFADE_DURATION) * 1000;
+        const crossfadeDuration = getCrossfadeDuration(engine);
+        const timeUntilCrossfade = (loopDuration - crossfadeDuration) * 1000;
 
         engine.loopSchedulerId = window.setTimeout(() => {
           if (engine.playState === "sustain") {
@@ -1697,39 +1777,23 @@ export function triggerAttack(engine: AudioEngine): void {
       }
     }, timeToLoop);
   } else {
-    // Short sample: one-shot mode - play once, no loop (unless piano mode, then loop for continuous sustain)
+    // Short sample: one-shot mode - play once, no loop
     dlog(engine, "🎹 PLAY (one-shot) - starting sample");
 
     engine.sourceGain1.gain.value = 1;
 
-    if (engine.instrumentMode === "piano") {
-      // Loop the short piano sample for continuous sustain. Loop region prefers computed
-      // loopStart/loopEnd if available, otherwise the full buffer is used.
-      engine.sourceNode = createSource(engine, 0, engine.sourceGain1, 0, {
-        loop: true,
-        loopStart: engine.loopStart,
-        loopEnd: engine.loopEnd || (engine.buffer ? engine.buffer.duration : 0),
-      });
-      engine.playState = "sustain";
-      dlog(
-        engine,
-        `Piano: looping one-shot sample (loopStart=${engine.loopStart}, loopEnd=${engine.loopEnd || (engine.buffer ? engine.buffer.duration : 0)})`,
-      );
-      // No onended handler — the loop will be stopped by triggerRelease/stopCurrentSound.
-    } else {
-      engine.sourceNode = createSource(engine, 0, engine.sourceGain1);
-      engine.playState = "sustain";
-      // When sample ends naturally, go back to idle and load new sample
-      engine.sourceNode.onended = async () => {
-        // clear tracked source
-        if (engine.sourceNode) engine.sourceNode = null;
-        if (engine.playState !== "idle") {
-          dlog(engine, "Short sample ended naturally, loading new sample");
-          engine.playState = "idle";
-          await loadNewSample(engine);
-        }
-      };
-    }
+    engine.sourceNode = createSource(engine, 0, engine.sourceGain1);
+    engine.playState = "sustain";
+    // When sample ends naturally, go back to idle and load new sample
+    engine.sourceNode.onended = async () => {
+      // clear tracked source
+      if (engine.sourceNode) engine.sourceNode = null;
+      if (engine.playState !== "idle") {
+        dlog(engine, "Short sample ended naturally, loading new sample");
+        engine.playState = "idle";
+        await loadNewSample(engine);
+      }
+    };
   }
 }
 
@@ -1741,6 +1805,62 @@ export function triggerRelease(engine: AudioEngine): void {
   }
 
   if (engine.playState === "idle" || engine.playState === "release") {
+    return;
+  }
+
+  // Piano mode: simple fade-out (no release portion for plucked instruments)
+  // We must capture the old source reference before setting playState to idle,
+  // so that if a new attack happens during the fade, we don't accidentally stop the new source.
+  if (engine.instrumentMode === "piano") {
+    dlog(engine, "🎹 RELEASE (Piano) - fading out");
+
+    if (engine.loopSchedulerId !== null) {
+      clearTimeout(engine.loopSchedulerId);
+      engine.loopSchedulerId = null;
+    }
+
+    const ctx = Tone.getContext().rawContext;
+    const now = ctx.currentTime;
+    const oldSource = engine.sourceNode;
+
+    // Fade out the gain
+    if (engine.sourceGain1) {
+      engine.sourceGain1.gain.cancelScheduledValues(now);
+      engine.sourceGain1.gain.setValueAtTime(
+        engine.sourceGain1.gain.value,
+        now,
+      );
+      engine.sourceGain1.gain.linearRampToValueAtTime(
+        0,
+        now + FADE_OUT_DURATION,
+      );
+    }
+
+    engine.playState = "idle";
+
+    // Stop the old source after fade completes, but only if it's still the same source
+    setTimeout(
+      () => {
+        if (oldSource) {
+          safeStopAndDisconnect(oldSource);
+          // Only null the slot if it still points to the old source
+          if (engine.sourceNode === oldSource) {
+            engine.sourceNode = null;
+          }
+          dlog(
+            engine,
+            `Piano release cleanup stopped old=${sourceId(oldSource)}`,
+          );
+        }
+        // Reset gain for next attack (only if we're idle - don't interfere with active playback)
+        if (engine.playState === "idle" && engine.sourceGain1) {
+          engine.sourceGain1.gain.cancelScheduledValues(ctx.currentTime);
+          engine.sourceGain1.gain.setValueAtTime(1, ctx.currentTime);
+        }
+      },
+      FADE_OUT_DURATION * 1000 + 50,
+    );
+
     return;
   }
 
@@ -1789,10 +1909,12 @@ export function triggerRelease(engine: AudioEngine): void {
     // otherwise competing ramps can cause audible hitches.
     currentGain.gain.cancelScheduledValues(now);
     releaseGain.gain.cancelScheduledValues(now);
+    const crossfadeDuration = getCrossfadeDuration(engine);
+
     currentGain.gain.setValueAtTime(currentGain.gain.value, now);
-    currentGain.gain.linearRampToValueAtTime(0, now + CROSSFADE_DURATION);
+    currentGain.gain.linearRampToValueAtTime(0, now + crossfadeDuration);
     releaseGain.gain.setValueAtTime(0, now);
-    releaseGain.gain.linearRampToValueAtTime(1, now + CROSSFADE_DURATION);
+    releaseGain.gain.linearRampToValueAtTime(1, now + crossfadeDuration);
 
     // Stop current source after crossfade
     setTimeout(
@@ -1804,7 +1926,7 @@ export function triggerRelease(engine: AudioEngine): void {
         if (engine.sourceNode === oldSource) engine.sourceNode = null;
         if (engine.sourceNode2 === oldSource) engine.sourceNode2 = null;
       },
-      CROSSFADE_DURATION * 1000 + 50,
+      crossfadeDuration * 1000 + 50,
     );
 
     // When release portion ends:
@@ -1862,7 +1984,10 @@ export function updateAudioParams(
 
   // Pitch shift (used for velocity-driven vibrato)
   if (engine.pitchShift) {
-    const target = ENABLE_VIBRATO ? params.pitchShift : 0;
+    const target =
+      ENABLE_VIBRATO && engine.instrumentMode !== "piano"
+        ? params.pitchShift
+        : 0;
     // Smooth parameter changes to reduce "steppy" / glitchy artifacts.
     // Tone's PitchShift.pitch is a Signal in practice, but keep this defensive.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1929,17 +2054,31 @@ export function updateAudioParams(
   }
 
   // Update gain - slightly slower ramp to reduce jitter/pops
-  engine.gain.gain.rampTo(params.gain, 0.015);
+  const gainTarget =
+    engine.instrumentMode === "piano" ? params.gain * 0.6 : params.gain;
+  engine.gain.gain.rampTo(gainTarget, 0.015);
 
   // Update filter cutoff for wah effect
   if (engine.filter) {
     if (ENABLE_WAH) {
-      const cutoff =
-        FILTER_MIN_FREQ *
-        Math.pow(FILTER_MAX_FREQ / FILTER_MIN_FREQ, params.filterCutoff);
+      const minFreq =
+        engine.instrumentMode === "piano"
+          ? PIANO_FILTER_MIN_FREQ
+          : FILTER_MIN_FREQ;
+      const maxFreq =
+        engine.instrumentMode === "piano"
+          ? PIANO_FILTER_MAX_FREQ
+          : FILTER_MAX_FREQ;
+      const qTarget =
+        engine.instrumentMode === "piano" ? PIANO_FILTER_Q : FILTER_Q;
+      engine.filter.type =
+        engine.instrumentMode === "piano" ? "bandpass" : "lowpass";
+      engine.filter.Q.value = qTarget;
+      const cutoff = minFreq * Math.pow(maxFreq / minFreq, params.filterCutoff);
       engine.filter.frequency.rampTo(cutoff, 0.008); // Fast ramp
     } else {
       // Keep filter fully open so it has no audible "wah" behavior.
+      engine.filter.type = "lowpass";
       engine.filter.frequency.rampTo(FILTER_MAX_FREQ, 0.02);
     }
   }
@@ -2064,7 +2203,13 @@ export function setInstrumentMode(
   engine.instrumentMode = mode;
   // Enable/disable bitcrusher based on mode
   if (engine.bitCrusher) {
-    engine.bitCrusher.wet.value = mode === "piano" ? 1 : 0;
+    engine.bitCrusher.wet.value = mode === "piano" ? 0.35 : 0;
+  }
+  if (engine.drive) {
+    engine.drive.wet.value = mode === "piano" ? PIANO_DRIVE_WET : 0;
+  }
+  if (engine.noiseGain) {
+    engine.noiseGain.gain.value = mode === "piano" ? PIANO_NOISE_GAIN : 0;
   }
 }
 

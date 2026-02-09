@@ -160,6 +160,42 @@
       "Viola Soft G2.wav",
       "Viola Soft G3.wav",
       "Viola Soft G4.wav"
+    ],
+    "Guitar": [
+      "guitar_A2_very-long_piano_normal.mp3",
+      "guitar_A3_very-long_piano_normal.mp3",
+      "guitar_A4_very-long_piano_normal.mp3",
+      "guitar_As2_very-long_piano_normal.mp3",
+      "guitar_As3_very-long_piano_normal.mp3",
+      "guitar_As4_very-long_piano_normal.mp3",
+      "guitar_B2_very-long_piano_normal.mp3",
+      "guitar_B3_very-long_piano_normal.mp3",
+      "guitar_B4_very-long_piano_normal.mp3",
+      "guitar_C3_very-long_piano_normal.mp3",
+      "guitar_C6_very-long_piano_normal.mp3",
+      "guitar_Cs3_very-long_piano_normal.mp3",
+      "guitar_D3_very-long_piano_normal.mp3",
+      "guitar_D4_very-long_piano_normal.mp3",
+      "guitar_D5_very-long_piano_normal.mp3",
+      "guitar_Ds3_very-long_piano_normal.mp3",
+      "guitar_Ds4_very-long_piano_normal.mp3",
+      "guitar_Ds5_very-long_piano_normal.mp3",
+      "guitar_E2_very-long_piano_normal.mp3",
+      "guitar_E3_very-long_piano_normal.mp3",
+      "guitar_E4_very-long_piano_normal.mp3",
+      "guitar_E5_very-long_piano_normal.mp3",
+      "guitar_F2_very-long_piano_normal.mp3",
+      "guitar_F3_very-long_piano_normal.mp3",
+      "guitar_F4_very-long_piano_normal.mp3",
+      "guitar_Fs2_very-long_piano_normal.mp3",
+      "guitar_Fs3_very-long_piano_normal.mp3",
+      "guitar_Fs4_very-long_piano_normal.mp3",
+      "guitar_G2_very-long_piano_normal.mp3",
+      "guitar_G3_very-long_piano_normal.mp3",
+      "guitar_G4_very-long_piano_normal.mp3",
+      "guitar_Gs2_very-long_piano_normal.mp3",
+      "guitar_Gs3_very-long_piano_normal.mp3",
+      "guitar_Gs4_very-long_piano_normal.mp3"
     ]
   },
   "loopPoints": {
@@ -1338,6 +1374,278 @@
       "isAcceptable": true,
       "useASR": true,
       "duration": 4.147
+    },
+    "/audio/all-samples/plucked/guitar/guitar_A2_very-long_piano_normal.mp3": {
+      "loopStart": 1.785,
+      "loopEnd": 3.822,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 5.512
+    },
+    "/audio/all-samples/plucked/guitar/guitar_A3_very-long_piano_normal.mp3": {
+      "loopStart": 1.485,
+      "loopEnd": 3.715,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 5.277
+    },
+    "/audio/all-samples/plucked/guitar/guitar_A4_very-long_piano_normal.mp3": {
+      "loopStart": 1.419,
+      "loopEnd": 2.85,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.232
+    },
+    "/audio/all-samples/plucked/guitar/guitar_As2_very-long_piano_normal.mp3": {
+      "loopStart": 1.813,
+      "loopEnd": 4.273,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 6.165
+    },
+    "/audio/all-samples/plucked/guitar/guitar_As3_very-long_piano_normal.mp3": {
+      "loopStart": 1.299,
+      "loopEnd": 2.824,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 3.866
+    },
+    "/audio/all-samples/plucked/guitar/guitar_As4_very-long_piano_normal.mp3": {
+      "loopStart": 1.334,
+      "loopEnd": 2.978,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.049
+    },
+    "/audio/all-samples/plucked/guitar/guitar_B2_very-long_piano_normal.mp3": {
+      "loopStart": 1.638,
+      "loopEnd": 3.696,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 5.303
+    },
+    "/audio/all-samples/plucked/guitar/guitar_B3_very-long_piano_normal.mp3": {
+      "loopStart": 1.376,
+      "loopEnd": 3.317,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.728
+    },
+    "/audio/all-samples/plucked/guitar/guitar_B4_very-long_piano_normal.mp3": {
+      "loopStart": 1.514,
+      "loopEnd": 3.283,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.702
+    },
+    "/audio/all-samples/plucked/guitar/guitar_C3_very-long_piano_normal.mp3": {
+      "loopStart": 1.703,
+      "loopEnd": 3.737,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 5.538
+    },
+    "/audio/all-samples/plucked/guitar/guitar_C6_very-long_piano_normal.mp3": {
+      "loopStart": 1.483,
+      "loopEnd": 3.385,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.833
+    },
+    "/audio/all-samples/plucked/guitar/guitar_Cs3_very-long_piano_normal.mp3": {
+      "loopStart": 1.53,
+      "loopEnd": 3.47,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 5.094
+    },
+    "/audio/all-samples/plucked/guitar/guitar_D3_very-long_piano_normal.mp3": {
+      "loopStart": 1.35,
+      "loopEnd": 2.972,
+      "rmsDiff": 0.014,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.049
+    },
+    "/audio/all-samples/plucked/guitar/guitar_D4_very-long_piano_normal.mp3": {
+      "loopStart": 1.81,
+      "loopEnd": 3.91,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 5.695
+    },
+    "/audio/all-samples/plucked/guitar/guitar_D5_very-long_piano_normal.mp3": {
+      "loopStart": 1.446,
+      "loopEnd": 3.488,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.807
+    },
+    "/audio/all-samples/plucked/guitar/guitar_Ds3_very-long_piano_normal.mp3": {
+      "loopStart": 1.591,
+      "loopEnd": 3.376,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.937
+    },
+    "/audio/all-samples/plucked/guitar/guitar_Ds4_very-long_piano_normal.mp3": {
+      "loopStart": 1.562,
+      "loopEnd": 3.477,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 5.016
+    },
+    "/audio/all-samples/plucked/guitar/guitar_Ds5_very-long_piano_normal.mp3": {
+      "loopStart": 1.14,
+      "loopEnd": 2.56,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 3.709
+    },
+    "/audio/all-samples/plucked/guitar/guitar_E2_very-long_piano_normal.mp3": {
+      "loopStart": 1.407,
+      "loopEnd": 3.293,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.885
+    },
+    "/audio/all-samples/plucked/guitar/guitar_E3_very-long_piano_normal.mp3": {
+      "loopStart": 1.424,
+      "loopEnd": 3.175,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.702
+    },
+    "/audio/all-samples/plucked/guitar/guitar_E4_very-long_piano_normal.mp3": {
+      "loopStart": 1.588,
+      "loopEnd": 3.354,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.963
+    },
+    "/audio/all-samples/plucked/guitar/guitar_E5_very-long_piano_normal.mp3": {
+      "loopStart": 1.43,
+      "loopEnd": 3.442,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 5.094
+    },
+    "/audio/all-samples/plucked/guitar/guitar_F2_very-long_piano_normal.mp3": {
+      "loopStart": 1.54,
+      "loopEnd": 3.709,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 5.094
+    },
+    "/audio/all-samples/plucked/guitar/guitar_F3_very-long_piano_normal.mp3": {
+      "loopStart": 1.511,
+      "loopEnd": 3.551,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.911
+    },
+    "/audio/all-samples/plucked/guitar/guitar_F4_very-long_piano_normal.mp3": {
+      "loopStart": 1.626,
+      "loopEnd": 3.687,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 5.407
+    },
+    "/audio/all-samples/plucked/guitar/guitar_Fs2_very-long_piano_normal.mp3": {
+      "loopStart": 2.007,
+      "loopEnd": 4.666,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 6.452
+    },
+    "/audio/all-samples/plucked/guitar/guitar_Fs3_very-long_piano_normal.mp3": {
+      "loopStart": 1.422,
+      "loopEnd": 3.349,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.702
+    },
+    "/audio/all-samples/plucked/guitar/guitar_Fs4_very-long_piano_normal.mp3": {
+      "loopStart": 1.223,
+      "loopEnd": 3.059,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.206
+    },
+    "/audio/all-samples/plucked/guitar/guitar_G2_very-long_piano_normal.mp3": {
+      "loopStart": 1.383,
+      "loopEnd": 3.488,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.937
+    },
+    "/audio/all-samples/plucked/guitar/guitar_G3_very-long_piano_normal.mp3": {
+      "loopStart": 1.176,
+      "loopEnd": 2.678,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 3.683
+    },
+    "/audio/all-samples/plucked/guitar/guitar_G4_very-long_piano_normal.mp3": {
+      "loopStart": 1.358,
+      "loopEnd": 3.348,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.78
+    },
+    "/audio/all-samples/plucked/guitar/guitar_Gs2_very-long_piano_normal.mp3": {
+      "loopStart": 1.614,
+      "loopEnd": 3.877,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 5.721
+    },
+    "/audio/all-samples/plucked/guitar/guitar_Gs3_very-long_piano_normal.mp3": {
+      "loopStart": 1.263,
+      "loopEnd": 3.107,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.31
+    },
+    "/audio/all-samples/plucked/guitar/guitar_Gs4_very-long_piano_normal.mp3": {
+      "loopStart": 1.505,
+      "loopEnd": 3.17,
+      "rmsDiff": 0,
+      "isAcceptable": true,
+      "useASR": true,
+      "duration": 4.598
     }
   }
 }

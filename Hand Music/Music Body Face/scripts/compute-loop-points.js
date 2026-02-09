@@ -1,24 +1,29 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S deno run --allow-read --allow-write --allow-run
 /**
  * Pre-compute loop points for all audio samples and save to manifest.
  * This eliminates the ~20-50ms findOptimalLoopPoints() call at runtime.
  *
- * Run with: node scripts/compute-loop-points.js
+ * Supports both WAV and MP3 files.
+ *
+ * Run with: deno run --allow-read --allow-write --allow-run scripts/compute-loop-points.js
  */
 
-import { readFile, writeFile } from 'fs/promises';
-import { existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { existsSync } from "https://deno.land/std@0.224.0/fs/mod.ts";
+import {
+  join,
+  dirname,
+  extname,
+  fromFileUrl,
+} from "https://deno.land/std@0.224.0/path/mod.ts";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const STATIC_DIR = join(__dirname, '..', 'static');
-const MANIFEST_PATH = join(STATIC_DIR, 'audio', 'manifest.json');
-const OUTPUT_PATH = join(STATIC_DIR, 'audio', 'manifest-with-loops.json');
+const __dirname = dirname(fromFileUrl(import.meta.url));
+const STATIC_DIR = join(__dirname, "..", "static");
+const MANIFEST_PATH = join(STATIC_DIR, "audio", "manifest.json");
+const OUTPUT_PATH = join(STATIC_DIR, "audio", "manifest-with-loops.json");
 
 // Loop point parameters (must match engine.ts)
-const LOOP_START_PERCENT = 0.30;
-const LOOP_END_PERCENT = 0.70;
+const LOOP_START_PERCENT = 0.3;
+const LOOP_END_PERCENT = 0.7;
 const LOOP_SEARCH_WINDOW = 0.15;
 const RMS_WINDOW = 0.03;
 const MAX_RMS_DIFF = 0.05;
@@ -26,18 +31,44 @@ const MIN_LOOP_LENGTH = 0.4;
 const MAX_LOOP_LENGTH = 4.0;
 const ASR_MIN_DURATION = 0.5;
 
-// We need a WAV decoder - use the built-in Web Audio API via a minimal decoder
-// For Node.js, we'll use a simple WAV parser
+// Folder path mappings - some folders have different actual paths
+const FOLDER_PATH_MAPPINGS = {
+  Guitar: "all-samples/plucked/guitar",
+};
+
+/**
+ * Get the actual filesystem path for a folder from the manifest
+ */
+function getActualFolderPath(folder) {
+  return FOLDER_PATH_MAPPINGS[folder] || folder;
+}
+
+/**
+ * Get the URL path for a sample (used as key in loopPoints)
+ */
+function getSampleUrlPath(folder, file) {
+  const actualFolder = getActualFolderPath(folder);
+  return `/audio/${actualFolder}/${file}`;
+}
 
 function parseWavHeader(buffer) {
-  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  const view = new DataView(
+    buffer.buffer,
+    buffer.byteOffset,
+    buffer.byteLength,
+  );
 
   // Check RIFF header
   const riff = String.fromCharCode(buffer[0], buffer[1], buffer[2], buffer[3]);
-  if (riff !== 'RIFF') throw new Error('Not a WAV file');
+  if (riff !== "RIFF") throw new Error("Not a WAV file");
 
-  const wave = String.fromCharCode(buffer[8], buffer[9], buffer[10], buffer[11]);
-  if (wave !== 'WAVE') throw new Error('Not a WAV file');
+  const wave = String.fromCharCode(
+    buffer[8],
+    buffer[9],
+    buffer[10],
+    buffer[11],
+  );
+  if (wave !== "WAVE") throw new Error("Not a WAV file");
 
   // Find fmt chunk
   let offset = 12;
@@ -48,14 +79,19 @@ function parseWavHeader(buffer) {
   let dataSize = 0;
 
   while (offset < buffer.length - 8) {
-    const chunkId = String.fromCharCode(buffer[offset], buffer[offset+1], buffer[offset+2], buffer[offset+3]);
+    const chunkId = String.fromCharCode(
+      buffer[offset],
+      buffer[offset + 1],
+      buffer[offset + 2],
+      buffer[offset + 3],
+    );
     const chunkSize = view.getUint32(offset + 4, true);
 
-    if (chunkId === 'fmt ') {
+    if (chunkId === "fmt ") {
       numChannels = view.getUint16(offset + 10, true);
       sampleRate = view.getUint32(offset + 12, true);
       bitsPerSample = view.getUint16(offset + 22, true);
-    } else if (chunkId === 'data') {
+    } else if (chunkId === "data") {
       dataOffset = offset + 8;
       dataSize = chunkSize;
       break;
@@ -65,18 +101,23 @@ function parseWavHeader(buffer) {
     if (chunkSize % 2 !== 0) offset++; // Padding byte
   }
 
-  if (dataOffset === 0) throw new Error('No data chunk found');
+  if (dataOffset === 0) throw new Error("No data chunk found");
 
   return { sampleRate, numChannels, bitsPerSample, dataOffset, dataSize };
 }
 
 function extractChannelData(buffer, header) {
-  const { sampleRate, numChannels, bitsPerSample, dataOffset, dataSize } = header;
+  const { sampleRate, numChannels, bitsPerSample, dataOffset, dataSize } =
+    header;
   const bytesPerSample = bitsPerSample / 8;
   const numSamples = Math.floor(dataSize / (bytesPerSample * numChannels));
   const channelData = new Float32Array(numSamples);
 
-  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  const view = new DataView(
+    buffer.buffer,
+    buffer.byteOffset,
+    buffer.byteLength,
+  );
 
   for (let i = 0; i < numSamples; i++) {
     const sampleOffset = dataOffset + i * bytesPerSample * numChannels;
@@ -127,10 +168,22 @@ function findOptimalLoopPoints(channelData, sampleRate, duration) {
   const searchWindowSamples = Math.floor(LOOP_SEARCH_WINDOW * sampleRate);
   const rmsWindowSamples = Math.floor(RMS_WINDOW * sampleRate);
 
-  const startMin = Math.max(rmsWindowSamples, targetStartSample - searchWindowSamples);
-  const startMax = Math.min(channelData.length - rmsWindowSamples - 1, targetStartSample + searchWindowSamples);
-  const endMin = Math.max(rmsWindowSamples, targetEndSample - searchWindowSamples);
-  const endMax = Math.min(channelData.length - rmsWindowSamples - 1, targetEndSample + searchWindowSamples);
+  const startMin = Math.max(
+    rmsWindowSamples,
+    targetStartSample - searchWindowSamples,
+  );
+  const startMax = Math.min(
+    channelData.length - rmsWindowSamples - 1,
+    targetStartSample + searchWindowSamples,
+  );
+  const endMin = Math.max(
+    rmsWindowSamples,
+    targetEndSample - searchWindowSamples,
+  );
+  const endMax = Math.min(
+    channelData.length - rmsWindowSamples - 1,
+    targetEndSample + searchWindowSamples,
+  );
 
   const step = Math.floor(sampleRate * 0.002);
 
@@ -178,7 +231,8 @@ function findOptimalLoopPoints(channelData, sampleRate, duration) {
   const loopLength = loopEnd - loopStart;
 
   const avgRMS = (bestMatch.startRMS + bestMatch.endRMS) / 2;
-  const normalizedRmsDiff = avgRMS > 0 ? bestMatch.rmsDiff / avgRMS : bestMatch.rmsDiff;
+  const normalizedRmsDiff =
+    avgRMS > 0 ? bestMatch.rmsDiff / avgRMS : bestMatch.rmsDiff;
 
   const isAcceptable =
     normalizedRmsDiff <= MAX_RMS_DIFF &&
@@ -194,11 +248,107 @@ function findOptimalLoopPoints(channelData, sampleRate, duration) {
   };
 }
 
+/**
+ * Check if ffmpeg is available
+ */
+async function checkFfmpeg() {
+  try {
+    const command = new Deno.Command("ffmpeg", {
+      args: ["-version"],
+      stdout: "null",
+      stderr: "null",
+    });
+    const { success } = await command.output();
+    return success;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Convert MP3 to WAV using ffmpeg and return the WAV buffer
+ */
+async function convertMp3ToWavAsync(mp3Path) {
+  const tempId = crypto.randomUUID();
+  const tempWavPath = join(
+    Deno.env.get("TEMP") || Deno.env.get("TMPDIR") || "/tmp",
+    `loop-points-${tempId}.wav`,
+  );
+
+  try {
+    // Convert to 16-bit mono WAV for consistent processing
+    const command = new Deno.Command("ffmpeg", {
+      args: [
+        "-y",
+        "-i",
+        mp3Path,
+        "-ac",
+        "1",
+        "-ar",
+        "44100",
+        "-sample_fmt",
+        "s16",
+        tempWavPath,
+      ],
+      stdout: "null",
+      stderr: "null",
+    });
+    const { success } = await command.output();
+
+    if (!success) {
+      throw new Error("ffmpeg conversion failed");
+    }
+
+    const wavBuffer = await Deno.readFile(tempWavPath);
+    await Deno.remove(tempWavPath); // Clean up temp file
+    return wavBuffer;
+  } catch (err) {
+    // Clean up on error
+    try {
+      await Deno.remove(tempWavPath);
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
+}
+
+async function processWavFile(filePath) {
+  const buffer = await Deno.readFile(filePath);
+  const header = parseWavHeader(buffer);
+  const { channelData, sampleRate, duration } = extractChannelData(
+    buffer,
+    header,
+  );
+  return { channelData, sampleRate, duration };
+}
+
+async function processMp3File(filePath) {
+  // Convert MP3 to WAV first
+  const wavBuffer = await convertMp3ToWavAsync(filePath);
+  const header = parseWavHeader(wavBuffer);
+  const { channelData, sampleRate, duration } = extractChannelData(
+    wavBuffer,
+    header,
+  );
+  return { channelData, sampleRate, duration };
+}
+
 async function processFile(filePath) {
   try {
-    const buffer = await readFile(filePath);
-    const header = parseWavHeader(buffer);
-    const { channelData, sampleRate, duration } = extractChannelData(buffer, header);
+    const ext = extname(filePath).toLowerCase();
+    let audioData;
+
+    if (ext === ".wav") {
+      audioData = await processWavFile(filePath);
+    } else if (ext === ".mp3") {
+      audioData = await processMp3File(filePath);
+    } else {
+      console.warn(`  Unsupported format: ${ext}`);
+      return null;
+    }
+
+    const { channelData, sampleRate, duration } = audioData;
 
     if (duration < ASR_MIN_DURATION) {
       return { useASR: false, duration: Math.round(duration * 1000) / 1000 };
@@ -213,8 +363,15 @@ async function processFile(filePath) {
 }
 
 async function main() {
-  console.log('Loading manifest...');
-  const manifestData = await readFile(MANIFEST_PATH, 'utf-8');
+  // Check for ffmpeg (needed for MP3 support)
+  const hasFfmpeg = await checkFfmpeg();
+  if (!hasFfmpeg) {
+    console.warn("WARNING: ffmpeg not found. MP3 files will be skipped.");
+    console.warn("Install ffmpeg to process MP3 files.");
+  }
+
+  console.log("Loading manifest...");
+  const manifestData = await Deno.readTextFile(MANIFEST_PATH);
   const manifest = JSON.parse(manifestData);
 
   const extendedManifest = {
@@ -228,6 +385,7 @@ async function main() {
   let totalFiles = 0;
   let processedFiles = 0;
   let acceptableLoops = 0;
+  let skippedMp3 = 0;
 
   // Count total files
   for (const folder of Object.keys(manifest)) {
@@ -236,15 +394,31 @@ async function main() {
 
   console.log(`Processing ${totalFiles} files...`);
 
+  const encoder = new TextEncoder();
+
   for (const folder of Object.keys(manifest)) {
     const files = manifest[folder];
+    const actualFolder = getActualFolderPath(folder);
 
     for (const file of files) {
-      const filePath = join(STATIC_DIR, 'audio', folder, file);
-      const samplePath = `/audio/${folder}/${file}`;
+      const filePath = join(STATIC_DIR, "audio", actualFolder, file);
+      const samplePath = getSampleUrlPath(folder, file);
+      const ext = extname(file).toLowerCase();
 
       if (!existsSync(filePath)) {
         console.warn(`  File not found: ${filePath}`);
+        continue;
+      }
+
+      // Skip MP3 if ffmpeg not available
+      if (ext === ".mp3" && !hasFfmpeg) {
+        skippedMp3++;
+        processedFiles++;
+        await Deno.stdout.write(
+          encoder.encode(
+            `\r  [${processedFiles}/${totalFiles}] ⊘ ${file.substring(0, 30).padEnd(30)} (no ffmpeg)`,
+          ),
+        );
         continue;
       }
 
@@ -255,18 +429,31 @@ async function main() {
         extendedManifest.loopPoints[samplePath] = result;
         if (result.isAcceptable) acceptableLoops++;
 
-        const status = result.useASR ? (result.isAcceptable ? '✓' : '✗') : '○';
-        process.stdout.write(`\r  [${processedFiles}/${totalFiles}] ${status} ${file.substring(0, 30).padEnd(30)}`);
+        const status = result.useASR ? (result.isAcceptable ? "✓" : "✗") : "○";
+        await Deno.stdout.write(
+          encoder.encode(
+            `\r  [${processedFiles}/${totalFiles}] ${status} ${file.substring(0, 30).padEnd(30)}`,
+          ),
+        );
       }
     }
   }
 
-  console.log('\n');
+  console.log("\n");
   console.log(`Processed: ${processedFiles}/${totalFiles} files`);
-  console.log(`Acceptable loops: ${acceptableLoops}/${processedFiles} (${Math.round(acceptableLoops/processedFiles*100)}%)`);
+  if (skippedMp3 > 0) {
+    console.log(`Skipped MP3s (no ffmpeg): ${skippedMp3}`);
+  }
+  const processedWithLoops = processedFiles - skippedMp3;
+  console.log(
+    `Acceptable loops: ${acceptableLoops}/${processedWithLoops} (${Math.round((acceptableLoops / processedWithLoops) * 100)}%)`,
+  );
 
   // Write extended manifest
-  await writeFile(OUTPUT_PATH, JSON.stringify(extendedManifest, null, 2));
+  await Deno.writeTextFile(
+    OUTPUT_PATH,
+    JSON.stringify(extendedManifest, null, 2),
+  );
   console.log(`\nWritten to: ${OUTPUT_PATH}`);
 }
 
